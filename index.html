@@ -1,0 +1,2489 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EstágioFlow • Gestão de Contratos de Estágio (TCE) & SLA</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .fade-in { animation: fadeIn 0.25s ease-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        @media print {
+            body * { visibility: hidden !important; }
+            #tce-print-document, #tce-print-document * { visibility: visible !important; }
+            #tce-print-document {
+                position: fixed !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 15mm !important;
+                box-shadow: none !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+                font-size: 10.5pt !important;
+            }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <!-- Top Navigation Bar (Modo Gestor / Simulação de Ambientes) -->
+    <header id="app-navbar" class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-sm shrink-0">
+                    <i data-lucide="file-signature" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-bold text-slate-900 text-base sm:text-lg tracking-tight leading-none">EstágioFlow</h1>
+                        <span class="text-[11px] font-semibold uppercase tracking-wider bg-brand-50 text-brand-700 px-2 py-0.5 rounded-full border border-brand-100">ANPE • TCE & SLA</span>
+                    </div>
+                    <p class="text-xs text-slate-500 hidden sm:block mt-0.5">Gestão de Contratos de Estágio (Lei 11.788/2008) & Backup Google Sheets</p>
+                </div>
+            </div>
+
+            <!-- Botões de Navegação -->
+            <div id="mode-switcher" class="flex items-center gap-2 overflow-x-auto py-1">
+                <button onclick="switchView('gestor')" id="nav-gestor" class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-brand-600 text-white shadow-xs shrink-0">
+                    <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i>
+                    <span>Painel & Contratos</span>
+                </button>
+                <button onclick="switchView('financeiro')" id="nav-financeiro" class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-slate-100 text-slate-700 hover:bg-slate-200 shrink-0">
+                    <i data-lucide="wallet" class="w-3.5 h-3.5 text-emerald-600"></i>
+                    <span>Controle Financeiro</span>
+                </button>
+                <button onclick="switchView('empresa')" id="nav-empresa" class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-slate-100 text-slate-700 hover:bg-slate-200 shrink-0">
+                    <i data-lucide="building-2" class="w-3.5 h-3.5"></i>
+                    <span>Portal Empresa</span>
+                </button>
+                <button onclick="openPublicUrlModal()" id="btn-public-url" class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 shrink-0" title="Configurar domínio público (GitHub Pages / Vercel / Netlify) para os links enviados">
+                    <i data-lucide="globe" class="w-3.5 h-3.5"></i>
+                    <span>Link Público</span>
+                </button>
+                <button onclick="openSheetsConfigModal()" id="btn-sheets-status" class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 shrink-0" title="Configurar integração e backup automático no Google Sheets">
+                    <span id="sheets-dot" class="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span>Sheets</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Alerta de Arquivo Local (caso esteja aberto via file:// sem URL pública configurada) -->
+    <div id="local-file-banner" class="hidden bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-xs text-amber-900">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+                <i data-lucide="alert-circle" class="w-4 h-4 text-amber-600 shrink-0"></i>
+                <span>Você está abrindo o arquivo direto do computador. Para que empresas e estagiários abram pelo celular/internet, configure o seu <strong>Link Público (GitHub Pages / Netlify)</strong>.</span>
+            </div>
+            <button onclick="openPublicUrlModal()" class="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold shrink-0 transition">
+                Configurar Link Real
+            </button>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 1: PAINEL DO GESTOR DE CONTRATOS (DEMANDA, SLA E LINKS)          -->
+    <!-- ===================================================================== -->
+    <main id="view-gestor" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-grow space-y-6 fade-in">
+        
+        <!-- Barra de Ações Rápidas & Links Compartilháveis -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+                <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <i data-lucide="share-2" class="w-4 h-4 text-brand-600"></i>
+                    Link de Solicitação para Empresas Conveniadas
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">Envie o link público para a empresa selecionar apenas a <strong>Razão Social</strong> e solicitar os contratos.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="syncFromGoogleSheets(true)" id="btn-sync-now" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 transition">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                    Sincronizar Sheets
+                </button>
+                <button onclick="copyShareLink('empresa')" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-brand-600 hover:bg-brand-700 text-white flex items-center gap-1.5 transition shadow-xs">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    Copiar Link da Empresa
+                </button>
+                <button onclick="openCompaniesModal()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1.5 transition">
+                    <i data-lucide="building" class="w-3.5 h-3.5 text-brand-600"></i>
+                    Empresas (<span id="count-companies-badge">0</span>)
+                </button>
+                <button onclick="openInsuranceModal()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1.5 transition" title="Configurar Apólice de Seguro padrão do TCE">
+                    <i data-lucide="shield-check" class="w-3.5 h-3.5 text-indigo-600"></i>
+                    Apólice
+                </button>
+                <button onclick="openSlaModal()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1.5 transition">
+                    <i data-lucide="clock" class="w-3.5 h-3.5 text-amber-600"></i>
+                    SLA (<span id="sla-hours-badge">48</span>h)
+                </button>
+                <button onclick="exportCSV()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1.5 transition">
+                    <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-600"></i>
+                    CSV
+                </button>
+            </div>
+        </div>
+
+        <!-- KPIs & Indicadores de SLA -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-medium">Total Demandas</span>
+                    <i data-lucide="folder-kanban" class="w-4 h-4 text-slate-400"></i>
+                </div>
+                <div class="text-2xl font-bold text-slate-900" id="kpi-total">0</div>
+                <p class="text-[11px] text-slate-400 mt-1">Solicitações registradas</p>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <div class="flex items-center justify-between text-amber-600 mb-2">
+                    <span class="text-xs font-medium">Aguard. Estagiário</span>
+                    <i data-lucide="user-plus" class="w-4 h-4 text-amber-500"></i>
+                </div>
+                <div class="text-2xl font-bold text-slate-900" id="kpi-waiting">0</div>
+                <p class="text-[11px] text-slate-400 mt-1">Enviar/aguardar link aluno</p>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <div class="flex items-center justify-between text-brand-600 mb-2">
+                    <span class="text-xs font-medium">Prontos p/ TCE</span>
+                    <i data-lucide="file-check-2" class="w-4 h-4 text-brand-500"></i>
+                </div>
+                <div class="text-2xl font-bold text-slate-900" id="kpi-ready">0</div>
+                <p class="text-[11px] text-slate-400 mt-1">Dados completos recebidos</p>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <div class="flex items-center justify-between text-emerald-600 mb-2">
+                    <span class="text-xs font-medium">Concluídos</span>
+                    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-500"></i>
+                </div>
+                <div class="text-2xl font-bold text-slate-900" id="kpi-done">0</div>
+                <p class="text-[11px] text-slate-400 mt-1">Contratos formalizados</p>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs col-span-2 md:col-span-1">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-medium text-slate-600">Saúde do SLA</span>
+                    <i data-lucide="gauge" class="w-4 h-4 text-indigo-500"></i>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-2xl font-bold text-slate-900" id="kpi-sla-rate">100%</span>
+                    <span class="text-xs font-semibold text-rose-600" id="kpi-sla-overdue">0 atrasados</span>
+                </div>
+                <div class="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                    <div id="kpi-sla-bar" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 100%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filtros da Fila de Demanda -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+            <div class="relative flex-grow max-w-md">
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                <input type="text" id="filter-search" oninput="renderDashboard()" placeholder="Buscar por estagiário, protocolo ou empresa..." class="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition">
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <select id="filter-company" onchange="renderDashboard()" class="text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 flex-grow md:flex-grow-0">
+                    <option value="ALL">Todas as Empresas</option>
+                </select>
+
+                <select id="filter-status" onchange="renderDashboard()" class="text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 flex-grow md:flex-grow-0">
+                    <option value="ALL">Todos os Status</option>
+                    <option value="SOLICITADO">1. Aguardando Estagiário (Solicitado)</option>
+                    <option value="LINK_ENVIADO">2. Link Enviado ao Estagiário</option>
+                    <option value="PRONTO_TCE">3. Pronto p/ TCE</option>
+                    <option value="EM_ELABORACAO">4. Em Elaboração</option>
+                    <option value="ASSINATURA">5. Em Assinatura</option>
+                    <option value="CONCLUIDO">6. Concluído (Ativo)</option>
+                    <option value="DESLIGADO">7. Desligado / Rescindido</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Lista de Solicitações / Cards -->
+        <div id="requests-list" class="space-y-3"></div>
+    </main>
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 1B: CONTROLE FINANCEIRO (TAXA INICIAL, PARCELAS E DESLIGAMENTO)  -->
+    <!-- ===================================================================== -->
+    <main id="view-financeiro" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-grow space-y-6 fade-in">
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <i data-lucide="wallet" class="w-5 h-5 text-emerald-600"></i>
+                    Controle Financeiro — Taxas Iniciais & Parcelas do Contrato
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">Gerencie as parcelas referentes à duração de cada contrato e registre desligamentos para cancelar cobranças futuras.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                    <button type="button" onclick="changeFinanceMonth(-1)" class="px-2.5 py-2 hover:bg-slate-200 text-slate-600 transition" title="Mês Anterior">
+                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                    </button>
+                    <input type="month" id="fin-filter-month" onchange="renderFinanceiro()" class="text-sm bg-transparent px-2 py-1.5 font-semibold text-slate-800 focus:outline-none">
+                    <button type="button" onclick="changeFinanceMonth(1)" class="px-2.5 py-2 hover:bg-slate-200 text-slate-600 transition" title="Próximo Mês">
+                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <select id="fin-filter-status" onchange="renderFinanceiro()" class="text-sm bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-medium text-slate-700 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    <option value="ALL">Todos os Contratos</option>
+                    <option value="PENDENTE">Com Pendências no Mês</option>
+                    <option value="PAGO">Quitados no Mês</option>
+                    <option value="ATIVOS">Somente Contratos Ativos</option>
+                    <option value="DESLIGADOS">Somente Desligados</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- KPIs Financeiros -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <span class="text-xs font-medium text-slate-500">Taxas Iniciais Recebidas</span>
+                <div class="text-2xl font-bold text-emerald-600 mt-1" id="fin-kpi-initial-paid">R$ 0,00</div>
+                <span class="text-[11px] text-slate-400" id="fin-kpi-initial-pending">R$ 0,00 pend.</span>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <span class="text-xs font-medium text-slate-500">Mensalidades Recebidas (Mês)</span>
+                <div class="text-2xl font-bold text-brand-600 mt-1" id="fin-kpi-monthly-paid">R$ 0,00</div>
+                <span class="text-[11px] text-slate-400" id="fin-kpi-monthly-total">de R$ 0,00</span>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <span class="text-xs font-medium text-slate-500">A Receber no Mês</span>
+                <div class="text-2xl font-bold text-amber-600 mt-1" id="fin-kpi-monthly-pending">R$ 0,00</div>
+                <span class="text-[11px] text-slate-400" id="fin-kpi-pending-count">0 fatura(s)</span>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <span class="text-xs font-medium text-slate-500">Contratos Ativos</span>
+                <div class="text-2xl font-bold text-slate-900 mt-1" id="fin-kpi-active-contracts">0</div>
+                <span class="text-[11px] text-slate-400">Em vigência</span>
+            </div>
+        </div>
+
+        <!-- Lista de Cobranças -->
+        <div id="financeiro-list" class="space-y-4"></div>
+    </main>
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 2: PORTAL DA EMPRESA SOLICITANTE (?view=empresa)                 -->
+    <!-- ===================================================================== -->
+    <main id="view-empresa" class="hidden max-w-4xl mx-auto px-4 sm:px-6 py-8 w-full flex-grow fade-in">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="bg-gradient-to-r from-brand-900 to-brand-700 p-6 sm:p-8 text-white">
+                <div class="inline-flex items-center gap-2 bg-white/15 backdrop-blur-xs px-3 py-1 rounded-full text-xs font-medium mb-3">
+                    <i data-lucide="building-2" class="w-3.5 h-3.5"></i>
+                    Portal da Empresa Concedente • ANPE
+                </div>
+                <h2 class="text-xl sm:text-2xl font-bold">Solicitação de Contrato de Estágio (TCE)</h2>
+                <p class="text-brand-100 text-xs sm:text-sm mt-1">Selecione a Razão Social da sua empresa e preencha os dados da vaga, supervisor e plano de atividades.</p>
+            </div>
+
+            <form id="form-empresa" onsubmit="submitCompanyRequests(event)" class="p-6 sm:p-8 space-y-6">
+                <!-- Seleção Única da Razão Social -->
+                <div class="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
+                        1. Selecione a Empresa Concedente (Razão Social) *
+                    </label>
+                    <select id="emp-company-select" required class="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                        <option value="">-- Selecione a Razão Social --</option>
+                    </select>
+                </div>
+
+                <!-- Lista Dinâmica de Estagiários -->
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-bold text-slate-900">2. Dados dos Estagiários & Condições do Estágio</h3>
+                        <button type="button" onclick="addInternBlock()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 flex items-center gap-1.5 transition">
+                            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                            Adicionar Outro Estagiário
+                        </button>
+                    </div>
+                    <div id="interns-blocks-container" class="space-y-6"></div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <p class="text-xs text-slate-500">Após o envio, nossa equipe entrará em contato com o estagiário para coleta dos dados acadêmicos e emissão do TCE.</p>
+                    <button type="submit" id="btn-submit-empresa" class="w-full sm:w-auto px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-sm transition">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                        <span>Enviar Solicitação</span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- Tela de Sucesso da Empresa -->
+            <div id="empresa-success-screen" class="hidden p-8 sm:p-12 text-center space-y-4">
+                <div class="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                    <i data-lucide="check-circle-2" class="w-9 h-9"></i>
+                </div>
+                <h3 class="text-xl font-bold text-slate-900">Solicitação Enviada com Sucesso!</h3>
+                <p class="text-sm text-slate-600 max-w-md mx-auto">Os protocolos foram gerados e sincronizados. Nossa equipe já vai acionar o(s) estagiário(s) para finalizar o TCE.</p>
+                <div id="empresa-protocols-list" class="max-w-md mx-auto bg-slate-50 rounded-xl p-4 border border-slate-200 text-left space-y-2 text-xs"></div>
+                <div class="pt-4">
+                    <button type="button" onclick="resetCompanyForm()" class="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700 transition">
+                        Nova Solicitação
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 3: PORTAL DO ESTAGIÁRIO (?view=estagiario&id=...)                -->
+    <!-- ===================================================================== -->
+    <main id="view-estagiario" class="hidden max-w-4xl mx-auto px-4 sm:px-6 py-8 w-full flex-grow fade-in">
+        <div id="intern-invalid-alert" class="hidden bg-white rounded-2xl border border-rose-200 p-8 text-center space-y-3">
+            <div class="w-12 h-12 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900">Link de Solicitação Inválido ou Não Encontrado</h3>
+            <p class="text-xs text-slate-500">Verifique se você abriu o link completo enviado pelo setor de contratos ou solicite um novo link.</p>
+        </div>
+
+        <div id="intern-form-card" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="bg-gradient-to-r from-slate-900 to-brand-900 p-6 sm:p-8 text-white">
+                <div class="inline-flex items-center gap-2 bg-white/15 px-3 py-1 rounded-full text-xs font-medium mb-3">
+                    <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
+                    Ficha Cadastral do Estagiário • Lei 11.788/2008
+                </div>
+                <h2 class="text-xl sm:text-2xl font-bold">Dados Pessoais e da Instituição de Ensino</h2>
+                <p class="text-slate-300 text-xs sm:text-sm mt-1">Preencha os campos obrigatórios para elaborarmos o seu Termo de Compromisso de Estágio (TCE).</p>
+            </div>
+
+            <!-- Resumo da Vaga -->
+            <div id="intern-vaga-summary" class="bg-brand-50/70 border-b border-brand-100 p-5 sm:px-8 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs"></div>
+
+            <form id="form-estagiario" onsubmit="submitInternData(event)" class="p-6 sm:p-8 space-y-8">
+                <!-- Seção 1: Dados Pessoais -->
+                <div class="space-y-4">
+                    <h3 class="text-sm font-bold text-slate-900 border-b border-slate-200 pb-2 flex items-center gap-2">
+                        <i data-lucide="user" class="w-4 h-4 text-brand-600"></i>
+                        1. Dados Pessoais do Estagiário
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Nome Completo *</label>
+                            <input type="text" id="est-nome" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Data de Nascimento *</label>
+                            <input type="date" id="est-nascimento" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">CPF *</label>
+                            <input type="text" id="est-cpf" required placeholder="000.000.000-00" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">RG *</label>
+                            <input type="text" id="est-rg" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Órgão Emissor / UF *</label>
+                            <input type="text" id="est-rg-orgao" required placeholder="Ex: SSP/SP" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Nacionalidade *</label>
+                            <input type="text" id="est-nacionalidade" value="Brasileira" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Naturalidade (Cidade/UF) *</label>
+                            <input type="text" id="est-naturalidade" required placeholder="Ex: São Paulo/SP" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Estado Civil *</label>
+                            <select id="est-estado-civil" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                                <option value="Solteiro(a)">Solteiro(a)</option>
+                                <option value="Casado(a)">Casado(a)</option>
+                                <option value="Divorciado(a)">Divorciado(a)</option>
+                                <option value="Viúvo(a)">Viúvo(a)</option>
+                                <option value="União Estável">União Estável</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">PIS / NIS (se houver)</label>
+                            <input type="text" id="est-pis" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">WhatsApp / Telefone *</label>
+                            <input type="text" id="est-telefone" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">E-mail Pessoal *</label>
+                            <input type="email" id="est-email" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                    </div>
+
+                    <!-- Menor de 18 anos -->
+                    <div class="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-3">
+                        <div class="flex flex-wrap items-center gap-4">
+                            <span class="text-xs font-bold text-slate-800">Menor de 18 anos? *</span>
+                            <label class="inline-flex items-center gap-1.5 text-xs font-medium cursor-pointer">
+                                <input type="radio" name="est-menor" value="Não" checked onchange="toggleMinorFields()"> Não
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 text-xs font-medium cursor-pointer">
+                                <input type="radio" name="est-menor" value="Sim" onchange="toggleMinorFields()"> Sim
+                            </label>
+                        </div>
+                        <div id="minor-fields-container" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Nome Completo do Responsável Legal *</label>
+                                <input type="text" id="est-resp-nome" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">CPF do Responsável Legal *</label>
+                                <input type="text" id="est-resp-cpf" placeholder="000.000.000-00" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Seção 2: Endereço Residencial -->
+                <div class="space-y-4">
+                    <h3 class="text-sm font-bold text-slate-900 border-b border-slate-200 pb-2 flex items-center gap-2">
+                        <i data-lucide="map-pin" class="w-4 h-4 text-brand-600"></i>
+                        2. Endereço Residencial
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">CEP *</label>
+                            <input type="text" id="est-cep" onblur="fetchAddressByCep(this.value, 'est')" required placeholder="00000-000" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Logradouro (Rua/Av) *</label>
+                            <input type="text" id="est-rua" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Número / Compl. *</label>
+                            <input type="text" id="est-numero" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Bairro *</label>
+                            <input type="text" id="est-bairro" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Cidade *</label>
+                            <input type="text" id="est-cidade" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">UF *</label>
+                            <input type="text" id="est-uf" maxlength="2" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm uppercase">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Seção 3: Instituição de Ensino -->
+                <div class="space-y-4">
+                    <h3 class="text-sm font-bold text-slate-900 border-b border-slate-200 pb-2 flex items-center gap-2">
+                        <i data-lucide="school" class="w-4 h-4 text-brand-600"></i>
+                        3. Dados da Instituição de Ensino
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Razão Social / Nome da Instituição *</label>
+                            <input type="text" id="est-ie-nome" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">CNPJ da Instituição *</label>
+                            <input type="text" id="est-ie-cnpj" required placeholder="00.000.000/0001-00" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">CEP da Instituição *</label>
+                            <input type="text" id="est-ie-cep" onblur="fetchAddressByCep(this.value, 'ie')" required placeholder="00000-000" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Endereço (Rua, Nº, Complemento) *</label>
+                            <input type="text" id="est-ie-endereco" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Bairro *</label>
+                            <input type="text" id="est-ie-bairro" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Cidade *</label>
+                            <input type="text" id="est-ie-cidade" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">UF *</label>
+                            <input type="text" id="est-ie-uf" maxlength="2" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm uppercase">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Telefone da Instituição *</label>
+                            <input type="text" id="est-ie-telefone" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">E-mail Institucional / Setor de Estágios *</label>
+                            <input type="email" id="est-ie-email" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Representante Legal da IE (Assina TCE)</label>
+                            <input type="text" id="est-ie-rep-nome" placeholder="Nome do Diretor/Reitor" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Cargo do Representante IE</label>
+                            <input type="text" id="est-ie-rep-cargo" placeholder="Ex: Diretor(a)" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">CPF do Representante IE</label>
+                            <input type="text" id="est-ie-rep-cpf" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Professor Orientador / Coordenador do Curso *</label>
+                            <input type="text" id="est-ie-orientador" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">E-mail do Orientador *</label>
+                            <input type="email" id="est-ie-orientador-email" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Seção 4: Dados Acadêmicos -->
+                <div class="space-y-4">
+                    <h3 class="text-sm font-bold text-slate-900 border-b border-slate-200 pb-2 flex items-center gap-2">
+                        <i data-lucide="book-open" class="w-4 h-4 text-brand-600"></i>
+                        4. Dados Acadêmicos do Estagiário
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Nome do Curso *</label>
+                            <input type="text" id="est-curso" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Nível de Ensino *</label>
+                            <select id="est-nivel" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                                <option value="Superior">Superior</option>
+                                <option value="Técnico">Técnico</option>
+                                <option value="Médio">Ensino Médio</option>
+                                <option value="EJA">EJA</option>
+                                <option value="Especial">Educação Especial</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">RA / Nº de Matrícula *</label>
+                            <input type="text" id="est-ra" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Semestre / Série / Ano Atual *</label>
+                            <input type="text" id="est-semestre" required placeholder="Ex: 3º Semestre ou 2º Ano" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Turno das Aulas *</label>
+                            <select id="est-turno" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                                <option value="Manhã">Manhã</option>
+                                <option value="Tarde">Tarde</option>
+                                <option value="Noite">Noite</option>
+                                <option value="Integral">Integral</option>
+                                <option value="EAD">EAD</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Previsão de Conclusão (Mês/Ano) *</label>
+                            <input type="text" id="est-conclusao" required placeholder="Ex: 12/2027" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Carga Horária Total do Curso</label>
+                            <input type="text" id="est-carga-curso" placeholder="Ex: 2.400 horas" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Situação da Matrícula *</label>
+                            <select id="est-situacao" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                                <option value="Matrícula e frequência regulares">Matrícula e frequência regulares</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-200 flex justify-end">
+                    <button type="submit" id="btn-submit-estagiario" class="w-full sm:w-auto px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-sm transition">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                        <span>Enviar Meus Dados para o TCE</span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- Sucesso do Estagiário -->
+            <div id="estagiario-success-screen" class="hidden p-8 sm:p-12 text-center space-y-4">
+                <div class="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                    <i data-lucide="party-popper" class="w-9 h-9"></i>
+                </div>
+                <h3 class="text-xl font-bold text-slate-900">Cadastro Recebido com Sucesso!</h3>
+                <p class="text-sm text-slate-600 max-w-md mx-auto">Seus dados pessoais e acadêmicos foram enviados para a equipe de contratos. Em breve você receberá o Termo de Compromisso de Estágio (TCE) para assinatura.</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===================================================================== -->
+    <!-- MODAIS DE GESTÃO                                                      -->
+    <!-- ===================================================================== -->
+
+    <!-- Modal 1: Ficha Consolidada TCE -->
+    <div id="modal-tce-details" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden fade-in">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                    <span class="text-[11px] font-mono text-brand-300" id="modal-tce-protocol">PROTOCOLO</span>
+                    <h3 class="text-base font-bold" id="modal-tce-title">Ficha Consolidada TCE</h3>
+                </div>
+                <button onclick="closeModal('modal-tce-details')" class="p-1.5 hover:bg-white/10 rounded-lg transition"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div id="modal-tce-body" class="p-6 overflow-y-auto space-y-5 text-xs"></div>
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <button type="button" onclick="copyFullTceText()" class="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold flex items-center gap-1.5 transition">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    Copiar Texto da Ficha
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="btn-modal-generate-tce" class="px-4 py-2 rounded-xl bg-indigo-900 hover:bg-indigo-800 text-white text-xs font-semibold flex items-center gap-1.5 transition">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5 text-emerald-300"></i>
+                        Gerar Minuta Oficial TCE
+                    </button>
+                    <button type="button" onclick="closeModal('modal-tce-details')" class="px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700 transition">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 1B: Gerador Oficial da Minuta do TCE (Impressão / PDF) -->
+    <div id="modal-tce-generator" class="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden fade-in">
+            <div class="px-6 py-4 bg-indigo-950 text-white flex items-center justify-between no-print">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="file-signature" class="w-5 h-5 text-emerald-400"></i>
+                    <div>
+                        <h3 class="text-sm font-bold">Minuta Oficial do Termo de Compromisso de Estágio (TCE)</h3>
+                        <p class="text-[11px] text-indigo-200">Pronto para imprimir ou salvar em PDF (Ctrl+P)</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="window.print()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition">
+                        <i data-lucide="printer" class="w-4 h-4"></i>
+                        Imprimir / Salvar PDF
+                    </button>
+                    <button onclick="closeModal('modal-tce-generator')" class="p-1.5 hover:bg-white/10 rounded-lg transition"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+            </div>
+            <div class="p-6 sm:p-10 overflow-y-auto bg-slate-100 flex-grow">
+                <div id="tce-print-document" class="bg-white max-w-3xl mx-auto p-8 sm:p-12 shadow-md border border-slate-200 text-slate-900 text-xs leading-relaxed space-y-5"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2: Cadastro de Empresas Conveniadas -->
+    <div id="modal-companies" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden fade-in">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <h3 class="text-base font-bold flex items-center gap-2">
+                    <i data-lucide="building-2" class="w-4 h-4 text-brand-400"></i>
+                    Empresas Conveniadas (Cadastro Completo ANPE)
+                </h3>
+                <button onclick="closeModal('modal-companies')" class="p-1.5 hover:bg-white/10 rounded-lg transition"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-6">
+                <form onsubmit="addCompany(event)" class="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-700">Cadastrar Nova Empresa Concedente</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div class="sm:col-span-2">
+                            <label class="block font-semibold text-slate-700 mb-1">Razão Social (Exibida no Link) *</label>
+                            <input type="text" id="comp-razao" required placeholder="Ex: JOSE LUIS TAVARES CORRETAGEM DE IMOVEIS LTDA" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">CNPJ *</label>
+                            <input type="text" id="comp-cnpj" required placeholder="00.000.000/0001-00" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Nome Fantasia</label>
+                            <input type="text" id="comp-fantasia" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Ramo de Atividade *</label>
+                            <input type="text" id="comp-ramo" required placeholder="Ex: Imobiliária / Tecnologia" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Quota Empregados (Art. 17)</label>
+                            <select id="comp-empregados" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                                <option value="1 a 5">1 a 5 empregados</option>
+                                <option value="6 a 10">6 a 10 empregados</option>
+                                <option value="11 a 25">11 a 25 empregados</option>
+                                <option value="Acima de 25">Acima de 25 empregados</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">CEP da Sede *</label>
+                            <input type="text" id="comp-cep" onblur="fetchAddressByCep(this.value, 'comp')" required placeholder="00000-000" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block font-semibold text-slate-700 mb-1">Endereço da Sede (Rua, Nº, Complemento) *</label>
+                            <input type="text" id="comp-endereco" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Bairro *</label>
+                            <input type="text" id="comp-bairro" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Cidade *</label>
+                            <input type="text" id="comp-cidade" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">UF *</label>
+                            <input type="text" id="comp-uf" maxlength="2" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm uppercase">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Telefone Empresa *</label>
+                            <input type="text" id="comp-telefone" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">E-mail Empresa / Assinatura *</label>
+                            <input type="email" id="comp-email" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Representante Legal (Assina TCE) *</label>
+                            <input type="text" id="comp-rep-nome" required class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Cargo do Representante *</label>
+                            <input type="text" id="comp-rep-cargo" required placeholder="Ex: Diretor / Sócio" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">CPF do Representante *</label>
+                            <input type="text" id="comp-rep-cpf" required placeholder="000.000.000-00" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Taxa Inicial por Contrato (R$)</label>
+                            <input type="number" step="0.01" id="comp-taxa-inicial" value="150.00" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Mensalidade por Estagiário (R$)</label>
+                            <input type="number" step="0.01" id="comp-mensalidade" value="150.00" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Dia Vencimento Boleto</label>
+                            <input type="number" min="1" max="31" id="comp-vencimento" value="30" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" class="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold transition">
+                            + Salvar Empresa Conveniada
+                        </button>
+                    </div>
+                </form>
+
+                <div class="space-y-2">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">Empresas Cadastradas</h4>
+                    <div id="companies-modal-list" class="divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 3: Desligamento / Rescisão do Estagiário -->
+    <div id="modal-terminate" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden fade-in">
+            <div class="px-6 py-4 bg-rose-900 text-white flex items-center justify-between">
+                <h3 class="text-sm font-bold flex items-center gap-2">
+                    <i data-lucide="user-x" class="w-4 h-4 text-rose-300"></i>
+                    Registrar Desligamento / Rescisão
+                </h3>
+                <button onclick="closeModal('modal-terminate')" class="p-1 hover:bg-white/10 rounded-lg"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <form onsubmit="confirmTermination(event)" class="p-6 space-y-4 text-xs">
+                <input type="hidden" id="term-req-id">
+                <div class="bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-900">
+                    <p class="font-bold" id="term-intern-name">Estagiário</p>
+                    <p class="text-[11px] mt-0.5" id="term-company-name">Empresa</p>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Data Efetiva do Desligamento *</label>
+                    <input type="date" id="term-date" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Motivo da Rescisão *</label>
+                    <select id="term-reason" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                        <option value="Pedido do Estagiário">Pedido do Estagiário</option>
+                        <option value="Iniciativa da Empresa Concedente">Iniciativa da Empresa Concedente</option>
+                        <option value="Efetivação CLT">Efetivação CLT</option>
+                        <option value="Término de Vigência / Conclusão do Curso">Término de Vigência / Conclusão do Curso</option>
+                        <option value="Trancamento / Abandono Escolar">Trancamento / Abandono Escolar</option>
+                    </select>
+                </div>
+                <p class="text-[11px] text-slate-500">Todas as parcelas mensais posteriores à data de desligamento serão automaticamente canceladas no controle financeiro.</p>
+                <div class="pt-2 flex justify-end gap-2">
+                    <button type="button" onclick="closeModal('modal-terminate')" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold">Confirmar Desligamento</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 4: Configuração do Link Público Real (GitHub Pages / Netlify / Vercel) -->
+    <div id="modal-public-url" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden fade-in">
+            <div class="px-6 py-4 bg-indigo-950 text-white flex items-center justify-between">
+                <h3 class="text-sm font-bold flex items-center gap-2">
+                    <i data-lucide="globe" class="w-4 h-4 text-emerald-400"></i>
+                    Link Público do Sistema (Internet / Celular)
+                </h3>
+                <button onclick="closeModal('modal-public-url')" class="p-1 hover:bg-white/10 rounded-lg"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-xs">
+                <p class="text-slate-600 leading-relaxed">
+                    Para que os links enviados às <strong>Empresas</strong> e aos <strong>Estagiários</strong> funcionem em qualquer celular ou computador (e não apontem para uma pasta local), informe abaixo a URL onde este sistema está hospedado (ex: GitHub Pages):
+                </p>
+                <div>
+                    <label class="block font-bold text-slate-800 mb-1">URL Base Publicada (https://...) *</label>
+                    <input type="url" id="input-public-base-url" placeholder="https://seu-usuario.github.io/estagioflow/" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-mono">
+                </div>
+                <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-[11px] text-indigo-900 space-y-1">
+                    <p class="font-bold">Como obter esse link grátis em 2 minutos:</p>
+                    <p>1. Crie um repositório público no <strong>GitHub</strong>, suba este arquivo renomeado para <code>index.html</code>.</p>
+                    <p>2. Vá em <strong>Settings &gt; Pages</strong> e ative a branch <code>main</code>. O GitHub gerará o link <code>https://...github.io/...</code> na hora.</p>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeModal('modal-public-url')" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Cancelar</button>
+                    <button type="button" onclick="savePublicBaseUrl()" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold">Salvar Link Público</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 5: Configuração Apólice de Seguro -->
+    <div id="modal-insurance" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden fade-in">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <h3 class="text-sm font-bold flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i> Apólice de Seguro (Cláusula III TCE)</h3>
+                <button onclick="closeModal('modal-insurance')" class="p-1 hover:bg-white/10 rounded-lg"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Nome da Seguradora *</label>
+                    <input type="text" id="ins-seguradora" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Número da Apólice *</label>
+                    <input type="text" id="ins-apolice" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Período de Vigência *</label>
+                    <input type="text" id="ins-vigencia" placeholder="Ex: 18/11/2025 à 18/11/2026" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button onclick="closeModal('modal-insurance')" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Cancelar</button>
+                    <button onclick="saveInsuranceConfig()" class="px-4 py-2 rounded-xl bg-brand-600 text-white font-semibold">Salvar Apólice</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 6: Configuração SLA -->
+    <div id="modal-sla" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden fade-in">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <h3 class="text-sm font-bold flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4 text-amber-400"></i> Meta de SLA</h3>
+                <button onclick="closeModal('modal-sla')" class="p-1 hover:bg-white/10 rounded-lg"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-xs">
+                <p class="text-slate-600">Defina o prazo máximo (em horas) esperado entre a solicitação da empresa e a conclusão do TCE.</p>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Prazo SLA (Horas)</label>
+                    <input type="number" id="input-sla-hours" min="1" max="720" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button onclick="closeModal('modal-sla')" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Cancelar</button>
+                    <button onclick="saveSlaConfig()" class="px-4 py-2 rounded-xl bg-brand-600 text-white font-semibold">Salvar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 7: Integração Google Sheets -->
+    <div id="modal-sheets-config" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden fade-in">
+            <div class="px-6 py-4 bg-emerald-900 text-white flex items-center justify-between">
+                <h3 class="text-sm font-bold flex items-center gap-2"><i data-lucide="table" class="w-4 h-4 text-emerald-300"></i> Integração & Backup Automático Google Sheets</h3>
+                <button onclick="closeModal('modal-sheets-config')" class="p-1 hover:bg-white/10 rounded-lg"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-5 text-xs">
+                <div class="space-y-2">
+                    <label class="block font-bold text-slate-800">URL do Web App (Google Apps Script) *</label>
+                    <div class="flex gap-2">
+                        <input type="url" id="sheets-webhook-url" placeholder="https://script.google.com/macros/s/.../exec" class="flex-grow bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-mono">
+                        <button onclick="saveSheetsWebhookUrl()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shrink-0">Salvar & Conectar</button>
+                    </div>
+                </div>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-slate-800">Script Google Apps Script (Code.gs)</span>
+                        <button onclick="copyAppsScriptCode()" class="px-3 py-1 rounded-lg bg-slate-800 text-white font-semibold hover:bg-slate-700">Copiar Código</button>
+                    </div>
+                    <pre id="apps-script-code" class="bg-slate-900 text-emerald-300 p-3 rounded-xl overflow-x-auto text-[11px] max-h-60 font-mono leading-relaxed"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // =====================================================================
+        // ESTADO GLOBAL E CONFIGURAÇÕES
+        // =====================================================================
+        const STORAGE_KEY_REQUESTS = 'estagioflow_requests_v3';
+        const STORAGE_KEY_COMPANIES = 'estagioflow_companies_v3';
+        const STORAGE_KEY_SLA = 'estagioflow_sla_hours_v3';
+        const STORAGE_KEY_INSURANCE = 'estagioflow_insurance_v3';
+        const STORAGE_KEY_WEBHOOK = 'estagioflow_sheets_webhook_v3';
+        const STORAGE_KEY_PUBLIC_URL = 'estagioflow_public_url_v3';
+
+        const STATUS_MAP = {
+            SOLICITADO: { label: '1. Aguardando Estagiário', badge: 'bg-amber-100 text-amber-800 border-amber-200', step: 1 },
+            LINK_ENVIADO: { label: '2. Link Enviado', badge: 'bg-sky-100 text-sky-800 border-sky-200', step: 2 },
+            PRONTO_TCE: { label: '3. Pronto p/ TCE', badge: 'bg-indigo-100 text-indigo-800 border-indigo-200', step: 3 },
+            EM_ELABORACAO: { label: '4. Em Elaboração', badge: 'bg-purple-100 text-purple-800 border-purple-200', step: 4 },
+            ASSINATURA: { label: '5. Em Assinatura', badge: 'bg-orange-100 text-orange-800 border-orange-200', step: 5 },
+            CONCLUIDO: { label: '6. Concluído (Ativo)', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', step: 6 },
+            DESLIGADO: { label: '7. Desligado / Rescindido', badge: 'bg-rose-100 text-rose-800 border-rose-200', step: 7 }
+        };
+
+        let requests = [];
+        let companies = [];
+        let slaHours = 48;
+        let insuranceConfig = {
+            seguradora: 'Porto Seguro',
+            apolice: '1139573',
+            vigencia: '18/11/2025 à 18/11/2026'
+        };
+        let webhookUrl = '';
+        let publicBaseUrl = '';
+        let currentModalRequestId = null;
+        let internBlockCounter = 0;
+
+        const APPS_SCRIPT_TEMPLATE = `function doGet(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reqSheet = getOrCreateSheet(ss, 'Solicitacoes_TCE', getReqHeaders());
+  const compSheet = getOrCreateSheet(ss, 'Empresas_Conveniadas', getCompHeaders());
+  const reqData = sheetToObjects(reqSheet);
+  const compData = sheetToObjects(compSheet);
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, requests: reqData, companies: compData }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const payload = JSON.parse(e.postData.contents);
+  const reqSheet = getOrCreateSheet(ss, 'Solicitacoes_TCE', getReqHeaders());
+  const histSheet = getOrCreateSheet(ss, 'Historico_Status', ['Data_Hora', 'Protocolo', 'Estagiario', 'Empresa', 'Status_Anterior', 'Novo_Status', 'Origem']);
+  const compSheet = getOrCreateSheet(ss, 'Empresas_Conveniadas', getCompHeaders());
+  const finSheet = getOrCreateSheet(ss, 'Controle_Financeiro', ['Data_Atualizacao', 'Protocolo', 'Empresa', 'Estagiario', 'Status_Contrato', 'Data_Desligamento', 'Taxa_Inicial_Status', 'Parcelas_Pagas']);
+
+  if (payload.action === 'UPSERT_REQUEST' && payload.request) {
+    upsertRow(reqSheet, 'id', payload.request);
+    if (payload.history) {
+      histSheet.appendRow([new Date().toLocaleString('pt-BR'), payload.request.id, payload.request.nomeEstagiario, payload.request.companyRazaoSocial, payload.history.from || '', payload.history.to || payload.request.status, payload.history.origin || 'Sistema']);
+    }
+    upsertFinanceRow(finSheet, payload.request);
+  }
+  if (payload.action === 'UPSERT_COMPANY' && payload.company) {
+    upsertRow(compSheet, 'id', payload.company);
+  }
+  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function getReqHeaders() {
+  return ['id', 'createdAt', 'updatedAt', 'status', 'companyRazaoSocial', 'nomeEstagiario', 'telefoneEstagiario', 'supervisorNome', 'supervisorCargo', 'supervisorFormacao', 'supervisorEmail', 'supervisorTelefone', 'modalidade', 'setorAtuacao', 'cargoEstagio', 'dataInicio', 'dataTermino', 'vigencia', 'jornadaDiaria', 'jornadaSemanal', 'horarioTrabalho', 'intervalo', 'diasSemana', 'bolsaAuxilio', 'diaPagamento', 'valeTransporte', 'outrosBeneficios', 'recessoRemunerado', 'planoAtividades', 'dataDesligamento', 'motivoDesligamento', 'jsonCompleto'];
+}
+function getCompHeaders() {
+  return ['id', 'razaoSocial', 'cnpj', 'nomeFantasia', 'ramoAtividade', 'quotaEmpregados', 'cep', 'endereco', 'bairro', 'cidade', 'uf', 'telefone', 'email', 'repNome', 'repCargo', 'repCpf', 'taxaInicial', 'mensalidade', 'diaVencimento'];
+}
+function getOrCreateSheet(ss, name, headers) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) { sh = ss.insertSheet(name); sh.appendRow(headers); sh.setFrozenRows(1); }
+  return sh;
+}
+function sheetToObjects(sh) {
+  const rows = sh.getDataRange().getValues();
+  if (rows.length < 2) return [];
+  const headers = rows[0];
+  return rows.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = r[i]);
+    if (obj.jsonCompleto) { try { return JSON.parse(obj.jsonCompleto); } catch(err) {} }
+    return obj;
+  });
+}
+function upsertRow(sh, keyField, obj) {
+  const data = sh.getDataRange().getValues();
+  const headers = data[0];
+  const keyIdx = headers.indexOf(keyField);
+  const rowValues = headers.map(h => h === 'jsonCompleto' ? JSON.stringify(obj) : (obj[h] !== undefined ? obj[h] : ''));
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][keyIdx]) === String(obj[keyField])) {
+      sh.getRange(i + 1, 1, 1, headers.length).setValues([rowValues]);
+      return;
+    }
+  }
+  sh.appendRow(rowValues);
+}
+function upsertFinanceRow(sh, req) {
+  const data = sh.getDataRange().getValues();
+  const paidCount = Object.values(req.installments || {}).filter(x => x && x.paid).length;
+  const rowValues = [new Date().toLocaleString('pt-BR'), req.id, req.companyRazaoSocial, req.nomeEstagiario, req.status, req.dataDesligamento || '', req.initialFeePaid ? 'PAGO' : 'PENDENTE', paidCount];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1]) === String(req.id)) {
+      sh.getRange(i + 1, 1, 1, rowValues.length).setValues([rowValues]);
+      return;
+    }
+  }
+  sh.appendRow(rowValues);
+}`;
+
+        // =====================================================================
+        // INICIALIZAÇÃO E ROTEAMENTO POR URL
+        // =====================================================================
+        window.addEventListener('DOMContentLoaded', () => {
+            loadLocalState();
+            const params = new URLSearchParams(window.location.search);
+            const apiParam = params.get('api');
+            if (apiParam) {
+                webhookUrl = decodeURIComponent(apiParam);
+                localStorage.setItem(STORAGE_KEY_WEBHOOK, webhookUrl);
+            }
+            updateSheetsStatusUI();
+            checkLocalFileWarning();
+
+            const now = new Date();
+            const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            const finMonthEl = document.getElementById('fin-filter-month');
+            if (finMonthEl) finMonthEl.value = ym;
+
+            const viewParam = params.get('view');
+            const reqIdParam = params.get('id');
+
+            if (viewParam === 'empresa') {
+                document.getElementById('mode-switcher').classList.add('hidden');
+                document.getElementById('local-file-banner').classList.add('hidden');
+                switchView('empresa');
+                if (webhookUrl) syncFromGoogleSheets(false);
+            } else if (viewParam === 'estagiario') {
+                document.getElementById('mode-switcher').classList.add('hidden');
+                document.getElementById('local-file-banner').classList.add('hidden');
+                switchView('estagiario', reqIdParam);
+                if (webhookUrl) syncFromGoogleSheets(false, () => loadInternView(reqIdParam));
+            } else {
+                switchView('gestor');
+                if (webhookUrl) syncFromGoogleSheets(false);
+            }
+
+            lucide.createIcons();
+        });
+
+        function checkLocalFileWarning() {
+            const isLocal = window.location.protocol === 'file:';
+            const banner = document.getElementById('local-file-banner');
+            if (isLocal && !publicBaseUrl) {
+                banner.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+            }
+        }
+
+        function normalizeRequest(r) {
+            if (!r || typeof r !== 'object') return null;
+            return {
+                id: r.id || ('TCE-' + Date.now()),
+                createdAt: r.createdAt || new Date().toISOString(),
+                updatedAt: r.updatedAt || r.createdAt || new Date().toISOString(),
+                status: r.status || 'SOLICITADO',
+                companyId: r.companyId || '',
+                companyRazaoSocial: r.companyRazaoSocial || 'Empresa não informada',
+                nomeEstagiario: r.nomeEstagiario || 'Estagiário sem nome',
+                telefoneEstagiario: r.telefoneEstagiario || '',
+                supervisorNome: r.supervisorNome || '',
+                supervisorCargo: r.supervisorCargo || '',
+                supervisorFormacao: r.supervisorFormacao || '',
+                supervisorEmail: r.supervisorEmail || '',
+                supervisorTelefone: r.supervisorTelefone || '',
+                modalidade: r.modalidade || 'Não obrigatório',
+                setorAtuacao: r.setorAtuacao || '',
+                cargoEstagio: r.cargoEstagio || '',
+                dataInicio: r.dataInicio || '',
+                dataTermino: r.dataTermino || '',
+                vigencia: r.vigencia || '12 meses',
+                jornadaDiaria: r.jornadaDiaria || '6 horas',
+                jornadaSemanal: r.jornadaSemanal || '30 horas',
+                horarioTrabalho: r.horarioTrabalho || '',
+                intervalo: r.intervalo || '15 minutos',
+                diasSemana: r.diasSemana || 'Segunda a Sexta',
+                bolsaAuxilio: r.bolsaAuxilio || '0',
+                diaPagamento: r.diaPagamento || '05/mês',
+                valeTransporte: r.valeTransporte || '0',
+                outrosBeneficios: r.outrosBeneficios || 'Nenhum',
+                recessoRemunerado: r.recessoRemunerado || '30 dias a cada 12 meses',
+                planoAtividades: r.planoAtividades || '',
+                dataDesligamento: r.dataDesligamento || '',
+                motivoDesligamento: r.motivoDesligamento || '',
+                initialFeeAmount: Number(r.initialFeeAmount ?? 150),
+                initialFeePaid: Boolean(r.initialFeePaid),
+                initialFeePaidDate: r.initialFeePaidDate || '',
+                monthlyFeeAmount: Number(r.monthlyFeeAmount ?? 150),
+                dueDay: Number(r.dueDay ?? 30),
+                installments: (r.installments && typeof r.installments === 'object') ? r.installments : {},
+                internData: r.internData || null
+            };
+        }
+
+        function loadLocalState() {
+            try {
+                const rawReq = JSON.parse(localStorage.getItem(STORAGE_KEY_REQUESTS) || '[]');
+                requests = Array.isArray(rawReq) ? rawReq.map(normalizeRequest).filter(Boolean) : [];
+                companies = JSON.parse(localStorage.getItem(STORAGE_KEY_COMPANIES) || '[]');
+                slaHours = Number(localStorage.getItem(STORAGE_KEY_SLA) || 48);
+                const savedIns = JSON.parse(localStorage.getItem(STORAGE_KEY_INSURANCE) || 'null');
+                if (savedIns) insuranceConfig = savedIns;
+                webhookUrl = localStorage.getItem(STORAGE_KEY_WEBHOOK) || '';
+                publicBaseUrl = localStorage.getItem(STORAGE_KEY_PUBLIC_URL) || '';
+            } catch (e) {
+                requests = [];
+                companies = [];
+            }
+
+            if (companies.length === 0) {
+                companies = [{
+                    id: 'EMP-001',
+                    razaoSocial: 'JOSE LUIS TAVARES CORRETAGEM DE IMOVEIS LTDA',
+                    cnpj: '61.300.669/0001-93',
+                    nomeFantasia: 'Premius Inteligência Imobiliária',
+                    ramoAtividade: 'Imobiliária',
+                    quotaEmpregados: '1 a 5',
+                    cep: '09520-070',
+                    endereco: 'Rua Amazonas, nº 669, Sala 22',
+                    bairro: 'Centro',
+                    cidade: 'São Caetano do Sul',
+                    uf: 'SP',
+                    telefone: '11 96037-3737',
+                    email: 'admin@premiusimoveis.com.br',
+                    repNome: 'José Luis Tavares',
+                    repCargo: 'Diretor',
+                    repCpf: '303.880.578-58',
+                    taxaInicial: 150,
+                    mensalidade: 150,
+                    diaVencimento: 30
+                }];
+                saveLocalOnly();
+            }
+        }
+
+        function saveLocalOnly() {
+            localStorage.setItem(STORAGE_KEY_REQUESTS, JSON.stringify(requests));
+            localStorage.setItem(STORAGE_KEY_COMPANIES, JSON.stringify(companies));
+            localStorage.setItem(STORAGE_KEY_SLA, String(slaHours));
+            localStorage.setItem(STORAGE_KEY_INSURANCE, JSON.stringify(insuranceConfig));
+            localStorage.setItem(STORAGE_KEY_WEBHOOK, webhookUrl);
+            localStorage.setItem(STORAGE_KEY_PUBLIC_URL, publicBaseUrl);
+        }
+
+        // =====================================================================
+        // SINCRONIZAÇÃO GOOGLE SHEETS
+        // =====================================================================
+        async function pushToGoogleSheets(payload) {
+            if (!webhookUrl) return;
+            try {
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+            } catch (err) {
+                console.warn('Erro ao enviar backup para Sheets:', err);
+            }
+        }
+
+        async function syncFromGoogleSheets(showFeedback = false, callback = null) {
+            if (!webhookUrl) {
+                if (showFeedback) showToast('Configure a URL do Google Apps Script primeiro.', 'warning');
+                return;
+            }
+            const btn = document.getElementById('btn-sync-now');
+            if (btn) btn.classList.add('opacity-60');
+            try {
+                const res = await fetch(webhookUrl);
+                const data = await res.json();
+                if (data && data.ok) {
+                    if (Array.isArray(data.companies) && data.companies.length > 0) {
+                        companies = data.companies;
+                    }
+                    if (Array.isArray(data.requests) && data.requests.length > 0) {
+                        requests = data.requests.map(normalizeRequest).filter(Boolean);
+                    }
+                    saveLocalOnly();
+                    renderDashboard();
+                    renderFinanceiro();
+                    populateCompanySelects();
+                    if (showFeedback) showToast('Dados sincronizados com a planilha Google Sheets!', 'success');
+                    if (callback) callback();
+                }
+            } catch (err) {
+                if (showFeedback) showToast('Não foi possível ler o Sheets agora. Verifique a implantação.', 'error');
+            } finally {
+                if (btn) btn.classList.remove('opacity-60');
+            }
+        }
+
+        // =====================================================================
+        // NAVEGAÇÃO ENTRE TELAS E GERAÇÃO DE LINKS PÚBLICOS REAIS
+        // =====================================================================
+        function switchView(viewName, extraId = null) {
+            ['view-gestor', 'view-financeiro', 'view-empresa', 'view-estagiario'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+
+            ['nav-gestor', 'nav-financeiro', 'nav-empresa'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-slate-100 text-slate-700 hover:bg-slate-200 shrink-0';
+                }
+            });
+
+            if (viewName === 'gestor') {
+                document.getElementById('view-gestor').classList.remove('hidden');
+                document.getElementById('nav-gestor').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-brand-600 text-white shadow-xs shrink-0';
+                populateCompanySelects();
+                renderDashboard();
+            } else if (viewName === 'financeiro') {
+                document.getElementById('view-financeiro').classList.remove('hidden');
+                document.getElementById('nav-financeiro').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-brand-600 text-white shadow-xs shrink-0';
+                renderFinanceiro();
+            } else if (viewName === 'empresa') {
+                document.getElementById('view-empresa').classList.remove('hidden');
+                document.getElementById('nav-empresa').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-brand-600 text-white shadow-xs shrink-0';
+                populateCompanySelects();
+                if (document.getElementById('interns-blocks-container').children.length === 0) {
+                    addInternBlock();
+                }
+            } else if (viewName === 'estagiario') {
+                document.getElementById('view-estagiario').classList.remove('hidden');
+                loadInternView(extraId);
+            }
+            lucide.createIcons();
+        }
+
+        function buildShareUrl(view, id = '') {
+            let base = '';
+            if (publicBaseUrl && publicBaseUrl.trim().startsWith('http')) {
+                base = publicBaseUrl.trim();
+            } else if (window.location.protocol.startsWith('http')) {
+                base = window.location.origin + window.location.pathname;
+            } else {
+                return null;
+            }
+
+            const url = new URL(base);
+            url.searchParams.set('view', view);
+            if (id) url.searchParams.set('id', id);
+            if (webhookUrl) url.searchParams.set('api', webhookUrl);
+            return url.toString();
+        }
+
+        function copyShareLink(view, id = '') {
+            const url = buildShareUrl(view, id);
+            if (!url) {
+                showToast('Configure primeiro o Link Público (GitHub Pages / Netlify) para gerar links reais!', 'warning');
+                openPublicUrlModal();
+                return;
+            }
+            copyToClipboard(url, view === 'empresa' ? 'Link público da Empresa copiado!' : 'Link público do Estagiário copiado!');
+        }
+
+        function openPublicUrlModal() {
+            document.getElementById('input-public-base-url').value = publicBaseUrl || (window.location.protocol.startsWith('http') ? window.location.origin + window.location.pathname : '');
+            document.getElementById('modal-public-url').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function savePublicBaseUrl() {
+            const val = document.getElementById('input-public-base-url').value.trim();
+            if (val && !val.startsWith('http')) {
+                showToast('Informe uma URL válida começando com https://', 'error');
+                return;
+            }
+            publicBaseUrl = val;
+            saveLocalOnly();
+            checkLocalFileWarning();
+            closeModal('modal-public-url');
+            showToast('Link público salvo! Todos os links copiados usarão esse endereço.', 'success');
+        }
+
+        // =====================================================================
+        // CÁLCULO DE DURAÇÃO E PARCELAS DO CONTRATO
+        // =====================================================================
+        function getContractInstallmentsPlan(req) {
+            let start = req.dataInicio ? new Date(req.dataInicio + 'T00:00:00') : new Date(req.createdAt);
+            if (isNaN(start.getTime())) start = new Date();
+
+            let totalMonths = 12;
+            if (req.dataTermino) {
+                const end = new Date(req.dataTermino + 'T00:00:00');
+                if (!isNaN(end.getTime()) && end >= start) {
+                    const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+                    totalMonths = Math.max(1, Math.min(24, diffMonths));
+                }
+            } else if (req.vigencia) {
+                if (req.vigencia.includes('6')) totalMonths = 6;
+                else if (req.vigencia.includes('2')) totalMonths = 24;
+                else totalMonths = 12;
+            }
+
+            const termMonthKey = (req.status === 'DESLIGADO' && req.dataDesligamento)
+                ? req.dataDesligamento.slice(0, 7)
+                : null;
+
+            const plan = [];
+            for (let i = 0; i < totalMonths; i++) {
+                const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+                const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const savedInfo = (req.installments && req.installments[ym]) || {};
+                const isCancelled = Boolean(termMonthKey && ym > termMonthKey && !savedInfo.paid);
+                plan.push({
+                    number: i + 1,
+                    total: totalMonths,
+                    ym,
+                    label: formatMonthBR(ym),
+                    paid: Boolean(savedInfo.paid),
+                    paidDate: savedInfo.paidDate || '',
+                    cancelled: isCancelled
+                });
+            }
+            return plan;
+        }
+
+        // =====================================================================
+        // PAINEL DO GESTOR (RENDERIZAÇÃO E SLA)
+        // =====================================================================
+        function calculateSlaInfo(req) {
+            const start = new Date(req.createdAt).getTime();
+            const isFinished = req.status === 'CONCLUIDO' || req.status === 'DESLIGADO';
+            const end = isFinished ? new Date(req.updatedAt || Date.now()).getTime() : Date.now();
+            const elapsedHours = Math.max(0, (end - start) / (1000 * 60 * 60));
+            const remaining = slaHours - elapsedHours;
+            const overdue = !isFinished && remaining < 0;
+
+            let text = '';
+            if (req.status === 'DESLIGADO') {
+                text = `Desligado em ${formatDateBR(req.dataDesligamento)}`;
+            } else if (req.status === 'CONCLUIDO') {
+                text = `Concluído em ${elapsedHours.toFixed(1)}h`;
+            } else if (overdue) {
+                text = `Atrasado ${Math.abs(remaining).toFixed(1)}h`;
+            } else {
+                text = `Restam ${remaining.toFixed(1)}h (SLA ${slaHours}h)`;
+            }
+
+            return { elapsedHours, overdue, text };
+        }
+
+        function renderDashboard() {
+            document.getElementById('count-companies-badge').textContent = companies.length;
+            document.getElementById('sla-hours-badge').textContent = slaHours;
+
+            const search = String(document.getElementById('filter-search')?.value || '').toLowerCase();
+            const filterComp = document.getElementById('filter-company')?.value || 'ALL';
+            const filterStat = document.getElementById('filter-status')?.value || 'ALL';
+
+            const total = requests.length;
+            const waiting = requests.filter(r => r.status === 'SOLICITADO' || r.status === 'LINK_ENVIADO').length;
+            const ready = requests.filter(r => r.status === 'PRONTO_TCE' || r.status === 'EM_ELABORACAO' || r.status === 'ASSINATURA').length;
+            const done = requests.filter(r => r.status === 'CONCLUIDO').length;
+            const overdueCount = requests.filter(r => calculateSlaInfo(r).overdue).length;
+            const slaRate = total > 0 ? Math.max(0, Math.round(((total - overdueCount) / total) * 100)) : 100;
+
+            document.getElementById('kpi-total').textContent = total;
+            document.getElementById('kpi-waiting').textContent = waiting;
+            document.getElementById('kpi-ready').textContent = ready;
+            document.getElementById('kpi-done').textContent = done;
+            document.getElementById('kpi-sla-rate').textContent = `${slaRate}%`;
+            document.getElementById('kpi-sla-overdue').textContent = `${overdueCount} atrasado(s)`;
+            document.getElementById('kpi-sla-bar').style.width = `${slaRate}%`;
+            document.getElementById('kpi-sla-bar').className = `h-full rounded-full transition-all duration-500 ${slaRate >= 85 ? 'bg-emerald-500' : slaRate >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`;
+
+            const filtered = requests.filter(r => {
+                const matchSearch = String(r.nomeEstagiario || '').toLowerCase().includes(search) ||
+                                    String(r.id || '').toLowerCase().includes(search) ||
+                                    String(r.companyRazaoSocial || '').toLowerCase().includes(search);
+                const matchComp = filterComp === 'ALL' || r.companyRazaoSocial === filterComp;
+                const matchStat = filterStat === 'ALL' || r.status === filterStat;
+                return matchSearch && matchComp && matchStat;
+            }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            const listEl = document.getElementById('requests-list');
+            if (filtered.length === 0) {
+                listEl.innerHTML = `
+                    <div class="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-2">
+                        <i data-lucide="inbox" class="w-10 h-10 text-slate-300 mx-auto"></i>
+                        <h3 class="text-sm font-bold text-slate-700">Nenhuma solicitação encontrada</h3>
+                        <p class="text-xs text-slate-500">Compartilhe o <strong>Link da Empresa</strong> para receber novas demandas de contrato de estágio.</p>
+                    </div>`;
+                lucide.createIcons();
+                return;
+            }
+
+            listEl.innerHTML = filtered.map(req => {
+                const st = STATUS_MAP[req.status] || STATUS_MAP.SOLICITADO;
+                const sla = calculateSlaInfo(req);
+                const plan = getContractInstallmentsPlan(req);
+                const paidCount = plan.filter(p => p.paid).length;
+                const activeInstallments = plan.filter(p => !p.cancelled).length;
+
+                return `
+                <div class="bg-white rounded-2xl border ${sla.overdue ? 'border-rose-300 ring-1 ring-rose-100' : 'border-slate-200'} p-4 sm:p-5 shadow-xs hover:shadow-md transition">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div class="space-y-1.5">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-xs font-mono font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-lg border border-brand-100">${req.id}</span>
+                                <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full border ${st.badge}">${st.label}</span>
+                                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${sla.overdue ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'} flex items-center gap-1">
+                                    <i data-lucide="clock" class="w-3 h-3"></i> ${sla.text}
+                                </span>
+                                <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    Parcelas: ${paidCount}/${activeInstallments} pagas
+                                </span>
+                            </div>
+
+                            <h3 class="text-base font-bold text-slate-900">${req.nomeEstagiario} <span class="text-xs font-normal text-slate-500">• ${req.telefoneEstagiario || 'Sem tel.'}</span></h3>
+                            <p class="text-xs text-slate-600 font-medium flex items-center gap-1.5">
+                                <i data-lucide="building-2" class="w-3.5 h-3.5 text-slate-400"></i>
+                                ${req.companyRazaoSocial}
+                            </p>
+
+                            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 pt-1">
+                                <span><strong>Início:</strong> ${formatDateBR(req.dataInicio)}</span>
+                                <span><strong>Término:</strong> ${formatDateBR(req.dataTermino)} (${plan.length}m)</span>
+                                <span><strong>Supervisor:</strong> ${req.supervisorNome || '-'} (${req.supervisorCargo || '-'})</span>
+                                <span><strong>Bolsa:</strong> R$ ${req.bolsaAuxilio}</span>
+                            </div>
+                        </div>
+
+                        <!-- Ações do Gestor -->
+                        <div class="flex flex-wrap items-center gap-2 shrink-0">
+                            <button onclick="contactInternWhatsApp('${req.id}')" class="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition shadow-xs" title="Enviar link público pelo WhatsApp">
+                                <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>
+                                WhatsApp Aluno
+                            </button>
+
+                            <button onclick="copyShareLink('estagiario', '${req.id}')" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1.5 transition" title="Copiar link direto do aluno">
+                                <i data-lucide="link" class="w-3.5 h-3.5"></i>
+                                Link
+                            </button>
+
+                            <button onclick="openTceDetails('${req.id}')" class="px-3 py-2 rounded-xl text-xs font-semibold bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 flex items-center gap-1.5 transition">
+                                <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                Ficha
+                            </button>
+
+                            <button onclick="openGenerateTceModal('${req.id}')" class="px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-900 hover:bg-indigo-800 text-white flex items-center gap-1.5 transition">
+                                <i data-lucide="file-text" class="w-3.5 h-3.5 text-emerald-300"></i>
+                                Gerar TCE
+                            </button>
+
+                            ${req.status !== 'DESLIGADO' ? `
+                            <button onclick="openTerminateModal('${req.id}')" class="px-3 py-2 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1.5 transition" title="Registrar desligamento do estagiário">
+                                <i data-lucide="user-x" class="w-3.5 h-3.5"></i>
+                                Desligar
+                            </button>` : ''}
+
+                            <select onchange="updateRequestStatus('${req.id}', this.value, 'Painel Gestor')" class="text-xs font-semibold bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-brand-500">
+                                ${Object.keys(STATUS_MAP).map(k => `<option value="${k}" ${req.status === k ? 'selected' : ''}>${STATUS_MAP[k].label}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        function updateRequestStatus(reqId, newStatus, origin = 'Gestor') {
+            if (newStatus === 'DESLIGADO') {
+                openTerminateModal(reqId);
+                renderDashboard();
+                return;
+            }
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            const oldStatus = req.status;
+            if (oldStatus === newStatus) return;
+
+            req.status = newStatus;
+            req.updatedAt = new Date().toISOString();
+            saveLocalOnly();
+            pushToGoogleSheets({
+                action: 'UPSERT_REQUEST',
+                request: req,
+                history: { from: oldStatus, to: newStatus, origin }
+            });
+            renderDashboard();
+            showToast(`Status atualizado para: ${STATUS_MAP[newStatus]?.label || newStatus}`, 'success');
+        }
+
+        function contactInternWhatsApp(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+
+            const internUrl = buildShareUrl('estagiario', req.id);
+            if (!internUrl) {
+                showToast('Configure primeiro o Link Público (GitHub Pages / Netlify) antes de enviar o WhatsApp!', 'warning');
+                openPublicUrlModal();
+                return;
+            }
+
+            if (req.status === 'SOLICITADO') {
+                updateRequestStatus(req.id, 'LINK_ENVIADO', 'WhatsApp Gestor');
+            }
+
+            const phoneDigits = String(req.telefoneEstagiario || '').replace(/\D/g, '');
+            const fullPhone = phoneDigits.startsWith('55') ? phoneDigits : '55' + phoneDigits;
+            const msg = `Olá *${req.nomeEstagiario}*! Tudo bem?\n\nRecebemos a solicitação do seu contrato de estágio pela empresa *${req.companyRazaoSocial}*.\n\nPor favor, preencha seus dados pessoais e da instituição de ensino no link abaixo para emitirmos o seu Termo de Compromisso de Estágio (TCE):\n\n${internUrl}`;
+            window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+        }
+
+        // =====================================================================
+        // DESLIGAMENTO / RESCISÃO DO ESTAGIÁRIO
+        // =====================================================================
+        function openTerminateModal(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            document.getElementById('term-req-id').value = req.id;
+            document.getElementById('term-intern-name').textContent = req.nomeEstagiario;
+            document.getElementById('term-company-name').textContent = req.companyRazaoSocial;
+            document.getElementById('term-date').value = req.dataDesligamento || new Date().toISOString().slice(0, 10);
+            document.getElementById('modal-terminate').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function confirmTermination(e) {
+            e.preventDefault();
+            const reqId = document.getElementById('term-req-id').value;
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+
+            const oldStatus = req.status;
+            req.status = 'DESLIGADO';
+            req.dataDesligamento = document.getElementById('term-date').value;
+            req.motivoDesligamento = document.getElementById('term-reason').value;
+            req.updatedAt = new Date().toISOString();
+
+            saveLocalOnly();
+            pushToGoogleSheets({
+                action: 'UPSERT_REQUEST',
+                request: req,
+                history: { from: oldStatus, to: 'DESLIGADO', origin: `Desligamento (${req.motivoDesligamento})` }
+            });
+
+            closeModal('modal-terminate');
+            renderDashboard();
+            renderFinanceiro();
+            showToast('Desligamento registrado e parcelas futuras canceladas!', 'success');
+        }
+
+        // =====================================================================
+        // CONTROLE FINANCEIRO (TAXA INICIAL + CARNÊ DE PARCELAS DO CONTRATO)
+        // =====================================================================
+        function changeFinanceMonth(delta) {
+            const input = document.getElementById('fin-filter-month');
+            if (!input || !input.value) return;
+            const [y, m] = input.value.split('-').map(Number);
+            const d = new Date(y, m - 1 + delta, 1);
+            input.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            renderFinanceiro();
+        }
+
+        function renderFinanceiro() {
+            const month = document.getElementById('fin-filter-month')?.value || new Date().toISOString().slice(0, 7);
+            const statusFilter = document.getElementById('fin-filter-status')?.value || 'ALL';
+
+            let initialPaid = 0, initialPending = 0;
+            let monthlyPaid = 0, monthlyPending = 0, pendingCount = 0;
+            let activeContracts = 0;
+
+            requests.forEach(r => {
+                const initVal = Number(r.initialFeeAmount || 0);
+                if (r.initialFeePaid) initialPaid += initVal;
+                else initialPending += initVal;
+
+                if (r.status !== 'DESLIGADO') activeContracts++;
+
+                const plan = getContractInstallmentsPlan(r);
+                const monthInst = plan.find(p => p.ym === month && !p.cancelled);
+                if (monthInst) {
+                    const mVal = Number(r.monthlyFeeAmount || 0);
+                    if (monthInst.paid) monthlyPaid += mVal;
+                    else {
+                        monthlyPending += mVal;
+                        pendingCount++;
+                    }
+                }
+            });
+
+            document.getElementById('fin-kpi-initial-paid').textContent = formatBRL(initialPaid);
+            document.getElementById('fin-kpi-initial-pending').textContent = `${formatBRL(initialPending)} pendente`;
+            document.getElementById('fin-kpi-monthly-paid').textContent = formatBRL(monthlyPaid);
+            document.getElementById('fin-kpi-monthly-total').textContent = `de ${formatBRL(monthlyPaid + monthlyPending)} previsto no mês`;
+            document.getElementById('fin-kpi-monthly-pending').textContent = formatBRL(monthlyPending);
+            document.getElementById('fin-kpi-pending-count').textContent = `${pendingCount} parcela(s) em aberto no mês`;
+            document.getElementById('fin-kpi-active-contracts').textContent = activeContracts;
+
+            const listEl = document.getElementById('financeiro-list');
+            const filtered = requests.filter(r => {
+                const plan = getContractInstallmentsPlan(r);
+                const monthInst = plan.find(p => p.ym === month && !p.cancelled);
+                const hasPending = !r.initialFeePaid || (monthInst && !monthInst.paid);
+
+                if (statusFilter === 'PENDENTE') return hasPending;
+                if (statusFilter === 'PAGO') return r.initialFeePaid && (!monthInst || monthInst.paid);
+                if (statusFilter === 'ATIVOS') return r.status !== 'DESLIGADO';
+                if (statusFilter === 'DESLIGADOS') return r.status === 'DESLIGADO';
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `<div class="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-500">Nenhum contrato encontrado para o filtro selecionado.</div>`;
+                return;
+            }
+
+            listEl.innerHTML = filtered.map(r => {
+                const plan = getContractInstallmentsPlan(r);
+                const activeCount = plan.filter(p => !p.cancelled).length;
+                const paidCount = plan.filter(p => p.paid).length;
+                const isTerminated = r.status === 'DESLIGADO';
+
+                return `
+                <div class="bg-white rounded-2xl border ${isTerminated ? 'border-rose-200 bg-rose-50/20' : 'border-slate-200'} p-4 sm:p-5 shadow-xs space-y-4">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-xs font-mono font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded">${r.id}</span>
+                                <span class="text-xs font-bold text-slate-900">${r.nomeEstagiario}</span>
+                                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${isTerminated ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
+                                    ${isTerminated ? `Desligado em ${formatDateBR(r.dataDesligamento)}` : `Ativo • ${paidCount}/${activeCount} parcelas pagas`}
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1">${r.companyRazaoSocial} • Vigência: ${formatDateBR(r.dataInicio)} até ${formatDateBR(r.dataTermino)} • Venc. dia ${r.dueDay}</p>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <!-- Taxa Inicial -->
+                            <div class="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+                                <div class="text-xs">
+                                    <span class="text-slate-500 block text-[10px]">Taxa Inicial (${formatBRL(r.initialFeeAmount)})</span>
+                                    <span class="font-bold ${r.initialFeePaid ? 'text-emerald-600' : 'text-amber-600'}">${r.initialFeePaid ? 'PAGO' : 'PENDENTE'}</span>
+                                </div>
+                                <button onclick="toggleInitialFeePayment('${r.id}')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold ${r.initialFeePaid ? 'bg-slate-200 text-slate-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'} transition">
+                                    ${r.initialFeePaid ? 'Estornar' : 'Baixar'}
+                                </button>
+                            </div>
+
+                            ${!isTerminated ? `
+                            <button onclick="openTerminateModal('${r.id}')" class="px-3 py-2 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1.5 transition">
+                                <i data-lucide="user-x" class="w-3.5 h-3.5"></i>
+                                Desligar Estagiário
+                            </button>` : ''}
+                        </div>
+                    </div>
+
+                    <!-- Grade de Parcelas do Contrato -->
+                    <div class="border-t border-slate-100 pt-3">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                            Parcelas do Contrato (${formatBRL(r.monthlyFeeAmount)} / mês) — Clique na parcela para dar baixa ou estornar:
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                            ${plan.map(p => {
+                                const isCurrentFilter = p.ym === month;
+                                if (p.cancelled) {
+                                    return `
+                                    <div class="p-2 rounded-xl border border-slate-200 bg-slate-100/70 text-slate-400 text-[11px] opacity-70">
+                                        <div class="font-bold line-through">Parc. ${p.number}/${p.total}</div>
+                                        <div>${p.label}</div>
+                                        <div class="text-[10px] text-rose-500 font-semibold mt-0.5">Cancelada</div>
+                                    </div>`;
+                                }
+                                return `
+                                <button type="button" onclick="toggleMonthlyFeePayment('${r.id}', '${p.ym}')" class="text-left p-2 rounded-xl border transition ${p.paid ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : isCurrentFilter ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-200 text-amber-950' : 'bg-white border-slate-200 hover:border-brand-400 text-slate-700'} text-[11px]">
+                                    <div class="flex items-center justify-between font-bold">
+                                        <span>Parc. ${p.number}/${p.total}</span>
+                                        <span>${p.paid ? '✓' : '•'}</span>
+                                    </div>
+                                    <div class="text-[10px] opacity-80">${p.label}</div>
+                                    <div class="font-bold mt-0.5 ${p.paid ? 'text-emerald-700' : 'text-amber-700'}">
+                                        ${p.paid ? 'PAGO' : 'Em aberto'}
+                                    </div>
+                                </button>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        function toggleInitialFeePayment(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            req.initialFeePaid = !req.initialFeePaid;
+            req.initialFeePaidDate = req.initialFeePaid ? new Date().toLocaleDateString('pt-BR') : '';
+            req.updatedAt = new Date().toISOString();
+            saveLocalOnly();
+            pushToGoogleSheets({ action: 'UPSERT_REQUEST', request: req });
+            renderFinanceiro();
+            showToast(req.initialFeePaid ? 'Taxa inicial baixada como PAGA!' : 'Pagamento da taxa inicial estornado.', 'success');
+        }
+
+        function toggleMonthlyFeePayment(reqId, ym) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            if (!req.installments) req.installments = {};
+            const current = req.installments[ym]?.paid || false;
+            req.installments[ym] = {
+                paid: !current,
+                paidDate: !current ? new Date().toLocaleDateString('pt-BR') : ''
+            };
+            req.updatedAt = new Date().toISOString();
+            saveLocalOnly();
+            pushToGoogleSheets({ action: 'UPSERT_REQUEST', request: req });
+            renderFinanceiro();
+            showToast(!current ? `Parcela (${formatMonthBR(ym)}) baixada como PAGA!` : `Parcela (${formatMonthBR(ym)}) estornada.`, 'success');
+        }
+
+        // =====================================================================
+        // FORMULÁRIO DA EMPRESA SOLICITANTE
+        // =====================================================================
+        function populateCompanySelects() {
+            const empSelect = document.getElementById('emp-company-select');
+            const filterSelect = document.getElementById('filter-company');
+
+            if (empSelect) {
+                const cur = empSelect.value;
+                empSelect.innerHTML = '<option value="">-- Selecione a Razão Social --</option>' +
+                    companies.map(c => `<option value="${c.id}">${c.razaoSocial}</option>`).join('');
+                if (cur) empSelect.value = cur;
+            }
+
+            if (filterSelect) {
+                const curF = filterSelect.value;
+                filterSelect.innerHTML = '<option value="ALL">Todas as Empresas</option>' +
+                    companies.map(c => `<option value="${c.razaoSocial}">${c.razaoSocial}</option>`).join('');
+                if (curF) filterSelect.value = curF;
+            }
+        }
+
+        function addInternBlock() {
+            internBlockCounter++;
+            const idx = internBlockCounter;
+            const container = document.getElementById('interns-blocks-container');
+            const div = document.createElement('div');
+            div.className = 'intern-block bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-5 relative fade-in';
+            div.id = `intern-block-${idx}`;
+
+            div.innerHTML = `
+                <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <span class="text-xs font-bold uppercase tracking-wider text-brand-700 flex items-center gap-1.5">
+                        <i data-lucide="user-check" class="w-4 h-4"></i>
+                        Estagiário #${idx}
+                    </span>
+                    ${idx > 1 ? `<button type="button" onclick="document.getElementById('intern-block-${idx}').remove()" class="text-xs text-rose-600 hover:underline font-semibold">Remover</button>` : ''}
+                </div>
+
+                <!-- Dados Básicos do Estagiário -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Nome Completo do Estagiário *</label>
+                        <input type="text" name="nomeEstagiario" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">WhatsApp / Telefone do Estagiário *</label>
+                        <input type="text" name="telefoneEstagiario" required placeholder="(11) 99999-9999" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                </div>
+
+                <!-- Supervisor de Estágio -->
+                <div class="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+                    <div class="text-xs font-bold text-slate-800">Supervisor de Estágio na Concedente (Art. 9º, III - Lei 11.788)</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Nome do Supervisor *</label>
+                            <input type="text" name="supervisorNome" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Cargo do Supervisor *</label>
+                            <input type="text" name="supervisorCargo" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Formação / Área de Atuação *</label>
+                            <input type="text" name="supervisorFormacao" required placeholder="Ex: Administração" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">E-mail do Supervisor *</label>
+                            <input type="email" name="supervisorEmail" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Telefone do Supervisor *</label>
+                            <input type="text" name="supervisorTelefone" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Condições do Estágio & Vigência -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Modalidade *</label>
+                        <select name="modalidade" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                            <option value="Não obrigatório">Não obrigatório</option>
+                            <option value="Obrigatório">Obrigatório (grade curricular)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Área / Setor de Atuação *</label>
+                        <input type="text" name="setorAtuacao" required placeholder="Ex: Marketing / Administrativo" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Cargo / Título do Estágio *</label>
+                        <input type="text" name="cargoEstagio" required placeholder="Ex: Estagiário Administrativo" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Data de Início *</label>
+                        <input type="date" name="dataInicio" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Data de Término *</label>
+                        <input type="date" name="dataTermino" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Vigência *</label>
+                        <select name="vigencia" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                            <option value="6 meses">6 meses</option>
+                            <option value="12 meses" selected>12 meses</option>
+                            <option value="2 anos">2 anos</option>
+                            <option value="Outra">Outra (conforme datas)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Jornada Diária *</label>
+                        <input type="text" name="jornadaDiaria" value="6 horas" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Jornada Semanal *</label>
+                        <input type="text" name="jornadaSemanal" value="30 horas" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Tempo de Intervalo *</label>
+                        <input type="text" name="intervalo" value="20 minutos" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Horário (Entrada e Saída) *</label>
+                        <input type="text" name="horarioTrabalho" required placeholder="Ex: 09:00 às 15:00" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Dias da Semana *</label>
+                        <input type="text" name="diasSemana" value="Segunda a Sexta" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                </div>
+
+                <!-- Bolsa & Benefícios -->
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Bolsa-Auxílio (R$) *</label>
+                        <input type="text" name="bolsaAuxilio" required placeholder="Ex: 1.200,00" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Dia de Pagamento *</label>
+                        <input type="text" name="diaPagamento" value="05/mês" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Auxílio-Transporte / VT *</label>
+                        <input type="text" name="valeTransporte" required placeholder="Ex: R$ 15,00/dia ou Integral" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Recesso Remunerado *</label>
+                        <select name="recessoRemunerado" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                            <option value="30 dias a cada 12 meses">30 dias a cada 12 meses</option>
+                            <option value="Proporcional (inferior a 12 meses)">Proporcional (&lt; 12 meses)</option>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Outros Benefícios (VR, VA, Plano de Saúde, etc.)</label>
+                        <input type="text" name="outrosBeneficios" placeholder="Ex: Vale-refeição R$ 20,00/dia (ou deixe em branco)" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Plano de Atividades (Obrigatório no TCE - Art. 7º) *</label>
+                        <textarea name="planoAtividades" rows="2" required placeholder="Descreva as atividades práticas compatíveis com o curso..." class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm"></textarea>
+                    </div>
+                </div>
+            `;
+            container.appendChild(div);
+            lucide.createIcons();
+        }
+
+        function submitCompanyRequests(e) {
+            e.preventDefault();
+            const compId = document.getElementById('emp-company-select').value;
+            const company = companies.find(c => c.id === compId);
+            if (!company) {
+                showToast('Selecione a Razão Social da empresa.', 'error');
+                return;
+            }
+
+            const blocks = document.querySelectorAll('.intern-block');
+            const createdProtocols = [];
+
+            blocks.forEach((block, i) => {
+                const getVal = (name) => block.querySelector(`[name="${name}"]`)?.value.trim() || '';
+                const protocolId = `TCE-${new Date().getFullYear()}-${String(requests.length + i + 1).padStart(4, '0')}`;
+
+                const newReq = normalizeRequest({
+                    id: protocolId,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    status: 'SOLICITADO',
+                    companyId: company.id,
+                    companyRazaoSocial: company.razaoSocial,
+                    nomeEstagiario: getVal('nomeEstagiario'),
+                    telefoneEstagiario: getVal('telefoneEstagiario'),
+                    supervisorNome: getVal('supervisorNome'),
+                    supervisorCargo: getVal('supervisorCargo'),
+                    supervisorFormacao: getVal('supervisorFormacao'),
+                    supervisorEmail: getVal('supervisorEmail'),
+                    supervisorTelefone: getVal('supervisorTelefone'),
+                    modalidade: getVal('modalidade'),
+                    setorAtuacao: getVal('setorAtuacao'),
+                    cargoEstagio: getVal('cargoEstagio'),
+                    dataInicio: getVal('dataInicio'),
+                    dataTermino: getVal('dataTermino'),
+                    vigencia: getVal('vigencia'),
+                    jornadaDiaria: getVal('jornadaDiaria'),
+                    jornadaSemanal: getVal('jornadaSemanal'),
+                    horarioTrabalho: getVal('horarioTrabalho'),
+                    intervalo: getVal('intervalo'),
+                    diasSemana: getVal('diasSemana'),
+                    bolsaAuxilio: getVal('bolsaAuxilio'),
+                    diaPagamento: getVal('diaPagamento'),
+                    valeTransporte: getVal('valeTransporte'),
+                    outrosBeneficios: getVal('outrosBeneficios') || 'Nenhum',
+                    recessoRemunerado: getVal('recessoRemunerado'),
+                    planoAtividades: getVal('planoAtividades'),
+                    initialFeeAmount: Number(company.taxaInicial ?? 150),
+                    initialFeePaid: false,
+                    monthlyFeeAmount: Number(company.mensalidade ?? 150),
+                    dueDay: Number(company.diaVencimento ?? 30),
+                    installments: {},
+                    internData: null
+                });
+
+                requests.push(newReq);
+                createdProtocols.push(newReq);
+                pushToGoogleSheets({
+                    action: 'UPSERT_REQUEST',
+                    request: newReq,
+                    history: { from: 'Novo Pedido', to: 'SOLICITADO', origin: 'Portal Empresa' }
+                });
+            });
+
+            saveLocalOnly();
+            document.getElementById('form-empresa').classList.add('hidden');
+            document.getElementById('empresa-success-screen').classList.remove('hidden');
+            document.getElementById('empresa-protocols-list').innerHTML = createdProtocols.map(p =>
+                `<div class="flex justify-between items-center py-1 border-b border-slate-200 last:border-0">
+                    <span class="font-bold text-slate-800">${p.nomeEstagiario}</span>
+                    <span class="font-mono font-bold text-brand-700">${p.id}</span>
+                </div>`
+            ).join('');
+            lucide.createIcons();
+        }
+
+        function resetCompanyForm() {
+            document.getElementById('form-empresa').reset();
+            document.getElementById('interns-blocks-container').innerHTML = '';
+            internBlockCounter = 0;
+            addInternBlock();
+            document.getElementById('empresa-success-screen').classList.add('hidden');
+            document.getElementById('form-empresa').classList.remove('hidden');
+        }
+
+        // =====================================================================
+        // FORMULÁRIO DO ESTAGIÁRIO
+        // =====================================================================
+        function loadInternView(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) {
+                document.getElementById('intern-form-card').classList.add('hidden');
+                document.getElementById('intern-invalid-alert').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('intern-invalid-alert').classList.add('hidden');
+            document.getElementById('intern-form-card').classList.remove('hidden');
+            document.getElementById('form-estagiario').dataset.reqId = req.id;
+
+            document.getElementById('intern-vaga-summary').innerHTML = `
+                <div><span class="text-slate-500 block">Empresa Concedente:</span><strong class="text-slate-900">${req.companyRazaoSocial}</strong></div>
+                <div><span class="text-slate-500 block">Período & Horário:</span><strong class="text-slate-900">${formatDateBR(req.dataInicio)} a ${formatDateBR(req.dataTermino)} • ${req.horarioTrabalho}</strong></div>
+                <div><span class="text-slate-500 block">Bolsa & Benefícios:</span><strong class="text-slate-900">R$ ${req.bolsaAuxilio} • VT: ${req.valeTransporte}</strong></div>
+            `;
+
+            document.getElementById('est-nome').value = req.nomeEstagiario || '';
+            document.getElementById('est-telefone').value = req.telefoneEstagiario || '';
+        }
+
+        function toggleMinorFields() {
+            const isMinor = document.querySelector('input[name="est-menor"]:checked')?.value === 'Sim';
+            const box = document.getElementById('minor-fields-container');
+            if (isMinor) {
+                box.classList.remove('hidden');
+                document.getElementById('est-resp-nome').required = true;
+                document.getElementById('est-resp-cpf').required = true;
+            } else {
+                box.classList.add('hidden');
+                document.getElementById('est-resp-nome').required = false;
+                document.getElementById('est-resp-cpf').required = false;
+            }
+        }
+
+        function submitInternData(e) {
+            e.preventDefault();
+            const reqId = document.getElementById('form-estagiario').dataset.reqId;
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+
+            const oldStatus = req.status;
+            req.nomeEstagiario = document.getElementById('est-nome').value.trim();
+            req.telefoneEstagiario = document.getElementById('est-telefone').value.trim();
+            req.internData = {
+                nascimento: document.getElementById('est-nascimento').value,
+                cpf: document.getElementById('est-cpf').value.trim(),
+                rg: document.getElementById('est-rg').value.trim(),
+                rgOrgao: document.getElementById('est-rg-orgao').value.trim(),
+                nacionalidade: document.getElementById('est-nacionalidade').value.trim(),
+                naturalidade: document.getElementById('est-naturalidade').value.trim(),
+                estadoCivil: document.getElementById('est-estado-civil').value,
+                pis: document.getElementById('est-pis').value.trim(),
+                email: document.getElementById('est-email').value.trim(),
+                menor18: document.querySelector('input[name="est-menor"]:checked')?.value || 'Não',
+                respNome: document.getElementById('est-resp-nome').value.trim(),
+                respCpf: document.getElementById('est-resp-cpf').value.trim(),
+                cep: document.getElementById('est-cep').value.trim(),
+                rua: document.getElementById('est-rua').value.trim(),
+                numero: document.getElementById('est-numero').value.trim(),
+                bairro: document.getElementById('est-bairro').value.trim(),
+                cidade: document.getElementById('est-cidade').value.trim(),
+                uf: document.getElementById('est-uf').value.trim().toUpperCase(),
+                ieNome: document.getElementById('est-ie-nome').value.trim(),
+                ieCnpj: document.getElementById('est-ie-cnpj').value.trim(),
+                ieCep: document.getElementById('est-ie-cep').value.trim(),
+                ieEndereco: document.getElementById('est-ie-endereco').value.trim(),
+                ieBairro: document.getElementById('est-ie-bairro').value.trim(),
+                ieCidade: document.getElementById('est-ie-cidade').value.trim(),
+                ieUf: document.getElementById('est-ie-uf').value.trim().toUpperCase(),
+                ieTelefone: document.getElementById('est-ie-telefone').value.trim(),
+                ieEmail: document.getElementById('est-ie-email').value.trim(),
+                ieRepNome: document.getElementById('est-ie-rep-nome').value.trim(),
+                ieRepCargo: document.getElementById('est-ie-rep-cargo').value.trim(),
+                ieRepCpf: document.getElementById('est-ie-rep-cpf').value.trim(),
+                ieOrientador: document.getElementById('est-ie-orientador').value.trim(),
+                ieOrientadorEmail: document.getElementById('est-ie-orientador-email').value.trim(),
+                curso: document.getElementById('est-curso').value.trim(),
+                nivel: document.getElementById('est-nivel').value,
+                ra: document.getElementById('est-ra').value.trim(),
+                semestre: document.getElementById('est-semestre').value.trim(),
+                turno: document.getElementById('est-turno').value,
+                conclusao: document.getElementById('est-conclusao').value.trim(),
+                cargaCurso: document.getElementById('est-carga-curso').value.trim(),
+                situacao: document.getElementById('est-situacao').value
+            };
+
+            req.status = 'PRONTO_TCE';
+            req.updatedAt = new Date().toISOString();
+            saveLocalOnly();
+
+            pushToGoogleSheets({
+                action: 'UPSERT_REQUEST',
+                request: req,
+                history: { from: oldStatus, to: 'PRONTO_TCE', origin: 'Portal Estagiário' }
+            });
+
+            document.getElementById('form-estagiario').classList.add('hidden');
+            document.getElementById('estagiario-success-screen').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        // =====================================================================
+        // FICHA CONSOLIDADA & GERADOR OFICIAL DA MINUTA DO TCE
+        // =====================================================================
+        function openTceDetails(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            currentModalRequestId = req.id;
+
+            document.getElementById('modal-tce-protocol').textContent = req.id;
+            document.getElementById('modal-tce-title').textContent = `${req.nomeEstagiario} • ${req.companyRazaoSocial}`;
+            document.getElementById('btn-modal-generate-tce').onclick = () => {
+                closeModal('modal-tce-details');
+                openGenerateTceModal(req.id);
+            };
+
+            const d = req.internData || {};
+            document.getElementById('modal-tce-body').innerHTML = `
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                    <h4 class="font-bold text-brand-700 uppercase">1. Dados da Vaga & Supervisor (Empresa)</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div><strong>Empresa:</strong> ${req.companyRazaoSocial}</div>
+                        <div><strong>Modalidade / Cargo:</strong> ${req.modalidade} • ${req.cargoEstagio}</div>
+                        <div><strong>Supervisor:</strong> ${req.supervisorNome} (${req.supervisorCargo})</div>
+                        <div><strong>Formação / Contato Sup.:</strong> ${req.supervisorFormacao} • ${req.supervisorEmail}</div>
+                        <div><strong>Vigência:</strong> ${formatDateBR(req.dataInicio)} a ${formatDateBR(req.dataTermino)} (${req.vigencia})</div>
+                        <div><strong>Jornada:</strong> ${req.jornadaDiaria}/dia • ${req.jornadaSemanal}/sem • ${req.horarioTrabalho}</div>
+                        <div><strong>Bolsa & VT:</strong> R$ ${req.bolsaAuxilio} (Pgto: ${req.diaPagamento}) • VT: ${req.valeTransporte}</div>
+                        <div><strong>Outros Benefícios:</strong> ${req.outrosBeneficios}</div>
+                        <div class="sm:col-span-2"><strong>Plano de Atividades:</strong> ${req.planoAtividades}</div>
+                    </div>
+                </div>
+                ${req.internData ? `
+                <div class="bg-emerald-50/50 p-4 rounded-xl border border-emerald-200 space-y-2">
+                    <h4 class="font-bold text-emerald-800 uppercase">2. Dados Pessoais & Instituição de Ensino (Estagiário)</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div><strong>Nome:</strong> ${req.nomeEstagiario}</div>
+                        <div><strong>Nascimento / Estado Civil:</strong> ${formatDateBR(d.nascimento)} • ${d.estadoCivil}</div>
+                        <div><strong>CPF / RG:</strong> ${d.cpf} • ${d.rg} (${d.rgOrgao})</div>
+                        <div><strong>E-mail / Tel:</strong> ${d.email} • ${req.telefoneEstagiario}</div>
+                        <div class="sm:col-span-2"><strong>Endereço:</strong> ${d.rua}, ${d.numero} - ${d.bairro}, ${d.cidade}/${d.uf} - CEP ${d.cep}</div>
+                        <div><strong>Instituição:</strong> ${d.ieNome} (CNPJ: ${d.ieCnpj})</div>
+                        <div><strong>Orientador:</strong> ${d.ieOrientador} (${d.ieOrientadorEmail})</div>
+                        <div><strong>Curso / Nível:</strong> ${d.curso} (${d.nivel}) • RA: ${d.ra}</div>
+                        <div><strong>Semestre / Turno / Conclusão:</strong> ${d.semestre} • ${d.turno} • ${d.conclusao}</div>
+                    </div>
+                </div>` : `
+                <div class="bg-amber-50 p-4 rounded-xl border border-amber-200 text-amber-800 font-medium">
+                    O estagiário ainda não preencheu o link com os dados pessoais e acadêmicos.
+                </div>`}
+            `;
+            document.getElementById('modal-tce-details').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function copyFullTceText() {
+            const text = document.getElementById('modal-tce-body').innerText;
+            copyToClipboard(text, 'Texto completo da ficha copiado!');
+        }
+
+        function openGenerateTceModal(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            const comp = companies.find(c => c.id === req.companyId || c.razaoSocial === req.companyRazaoSocial) || {};
+            const d = req.internData || {};
+            const hojeExtenso = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+            document.getElementById('tce-print-document').innerHTML = `
+                <div class="text-center border-b-2 border-slate-900 pb-3">
+                    <h1 class="text-sm font-extrabold uppercase tracking-wide">CONDIÇÕES GERAIS DE COOPERAÇÃO E TERMO DE COMPROMISSO DE ESTÁGIO</h1>
+                    <p class="text-[11px] text-slate-600 mt-1">Em consonância com a Lei Federal nº 11.788, de 25 de setembro de 2008 • Protocolo ${req.id}</p>
+                </div>
+
+                <table class="w-full border-collapse border border-slate-400 text-[11px]">
+                    <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">UNIDADE CONCEDENTE</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold w-1/3">Razão Social</td><td class="border border-slate-300 p-1.5">${comp.razaoSocial || req.companyRazaoSocial}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">CNPJ</td><td class="border border-slate-300 p-1.5">${comp.cnpj || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Endereço / Bairro</td><td class="border border-slate-300 p-1.5">${comp.endereco || '-'} - ${comp.bairro || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Cidade / UF / CEP</td><td class="border border-slate-300 p-1.5">${comp.cidade || '-'} / ${comp.uf || '-'} • CEP: ${comp.cep || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Telefone / E-mail</td><td class="border border-slate-300 p-1.5">${comp.telefone || '-'} • ${comp.email || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Supervisor de Estágio</td><td class="border border-slate-300 p-1.5">${req.supervisorNome || '-'} (${req.supervisorCargo || '-'})</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Representante Legal</td><td class="border border-slate-300 p-1.5">${comp.repNome || '-'} (${comp.repCargo || '-'})</td></tr>
+                </table>
+
+                <table class="w-full border-collapse border border-slate-400 text-[11px]">
+                    <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">INSTITUIÇÃO DE ENSINO</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold w-1/3">Nome / Razão Social</td><td class="border border-slate-300 p-1.5">${d.ieNome || 'A preencher'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">CNPJ</td><td class="border border-slate-300 p-1.5">${d.ieCnpj || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Endereço / Bairro</td><td class="border border-slate-300 p-1.5">${d.ieEndereco || '-'} - ${d.ieBairro || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Cidade / UF / CEP</td><td class="border border-slate-300 p-1.5">${d.ieCidade || '-'} / ${d.ieUf || '-'} • CEP: ${d.ieCep || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Telefone / E-mail</td><td class="border border-slate-300 p-1.5">${d.ieTelefone || '-'} • ${d.ieEmail || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Professor Orientador</td><td class="border border-slate-300 p-1.5">${d.ieOrientador || '-'} (${d.ieOrientadorEmail || '-'})</td></tr>
+                </table>
+
+                <table class="w-full border-collapse border border-slate-400 text-[11px]">
+                    <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">ESTAGIÁRIO</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold w-1/3">Nome Completo</td><td class="border border-slate-300 p-1.5">${req.nomeEstagiario}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">CPF / RG</td><td class="border border-slate-300 p-1.5">${d.cpf || '-'} • RG: ${d.rg || '-'} (${d.rgOrgao || '-'})</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Endereço</td><td class="border border-slate-300 p-1.5">${d.rua || '-'}, ${d.numero || '-'} - ${d.bairro || '-'}, ${d.cidade || '-'}/${d.uf || '-'} • CEP: ${d.cep || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Telefone / E-mail</td><td class="border border-slate-300 p-1.5">${req.telefoneEstagiario} • ${d.email || '-'}</td></tr>
+                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Curso / Série-Período</td><td class="border border-slate-300 p-1.5">${d.curso || '-'} (${d.nivel || '-'}) • ${d.semestre || '-'} • RA: ${d.ra || '-'}</td></tr>
+                </table>
+
+                <div class="space-y-2 text-[11px] text-justify">
+                    <p><strong>Cláusula I.</strong> O Estágio de que trata o presente Termo de Compromisso tem por objetivo propiciar ao Estagiário treinamento prático, aperfeiçoamento técnico, cultural, científico e de relacionamento humano, como complementação da sua formação profissional em ambiente de trabalho, cujas atividades devem ser compatíveis com o curso ao qual se refere, não gerando vínculo empregatício.</p>
+                    <p><strong>Cláusula II (Vigência).</strong> Início do Estágio: <strong>${formatDateBR(req.dataInicio)}</strong> • Término do Estágio: <strong>${formatDateBR(req.dataTermino)}</strong>.</p>
+                    <p><strong>Cláusula III (Apólice de Seguro).</strong> Seguradora: <strong>${insuranceConfig.seguradora}</strong> • Apólice nº <strong>${insuranceConfig.apolice}</strong> • Vigência: <strong>${insuranceConfig.vigencia}</strong>.</p>
+                    <p><strong>Cláusula IV (Jornada e Bolsa).</strong> Carga Horária: <strong>${req.jornadaSemanal} semanais</strong> (${req.jornadaDiaria} diárias) • Dias/Horário: <strong>${req.diasSemana} (${req.horarioTrabalho}, intervalo de ${req.intervalo})</strong> • Setor: <strong>${req.setorAtuacao}</strong> • Bolsa-Auxílio: <strong>R$ ${req.bolsaAuxilio}</strong> • Auxílio-Transporte: <strong>${req.valeTransporte}</strong> • Outros Benefícios: <strong>${req.outrosBeneficios}</strong>.</p>
+                    <p><strong>Cláusula V (Plano de Atividades).</strong> ${req.planoAtividades}</p>
+                    <p><strong>Cláusula VI a XI.</strong> As partes autorizam a Agência Nacional do Primeiro Emprego (ANPE) a atuar como Agente de Integração nos termos do Art. 5º da Lei nº 11.788/2008, ficando eleito o Foro da Comarca de Mauá/SP para dirimir quaisquer dúvidas oriundas deste Termo.</p>
+                </div>
+
+                <div class="pt-4 text-right text-[11px]">${comp.cidade || 'Mauá'}, ${hojeExtenso}.</div>
+
+                <div class="grid grid-cols-3 gap-4 pt-10 text-center text-[10px]">
+                    <div class="border-t border-slate-800 pt-1"><strong>${d.ieRepNome || 'Instituição de Ensino'}</strong><br>${d.ieNome || 'Carimbo e Assinatura'}</div>
+                    <div class="border-t border-slate-800 pt-1"><strong>${comp.repNome || 'Unidade Concedente'}</strong><br>${comp.razaoSocial || req.companyRazaoSocial}</div>
+                    <div class="border-t border-slate-800 pt-1"><strong>${req.nomeEstagiario}</strong><br>Estagiário(a) ${d.menor18 === 'Sim' ? `/ Resp: ${d.respNome}` : ''}</div>
+                </div>
+            `;
+            document.getElementById('modal-tce-generator').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        // =====================================================================
+        // GESTÃO DE EMPRESAS, APÓLICE, SLA E SHEETS
+        // =====================================================================
+        function openCompaniesModal() {
+            renderCompaniesModalList();
+            document.getElementById('modal-companies').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function renderCompaniesModalList() {
+            const el = document.getElementById('companies-modal-list');
+            el.innerHTML = companies.map(c => `
+                <div class="p-3 bg-white flex items-center justify-between gap-3 text-xs">
+                    <div>
+                        <div class="font-bold text-slate-900">${c.razaoSocial}</div>
+                        <div class="text-slate-500">CNPJ: ${c.cnpj} • Rep: ${c.repNome || '-'} • Taxa: R$ ${c.taxaInicial || 0} | Mensal: R$ ${c.mensalidade || 0}</div>
+                    </div>
+                    <button onclick="removeCompany('${c.id}')" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 font-semibold">Remover</button>
+                </div>
+            `).join('');
+        }
+
+        function addCompany(e) {
+            e.preventDefault();
+            const newComp = {
+                id: 'EMP-' + String(companies.length + 1).padStart(3, '0') + '-' + Date.now().toString().slice(-3),
+                razaoSocial: document.getElementById('comp-razao').value.trim().toUpperCase(),
+                cnpj: document.getElementById('comp-cnpj').value.trim(),
+                nomeFantasia: document.getElementById('comp-fantasia').value.trim(),
+                ramoAtividade: document.getElementById('comp-ramo').value.trim(),
+                quotaEmpregados: document.getElementById('comp-empregados').value,
+                cep: document.getElementById('comp-cep').value.trim(),
+                endereco: document.getElementById('comp-endereco').value.trim(),
+                bairro: document.getElementById('comp-bairro').value.trim(),
+                cidade: document.getElementById('comp-cidade').value.trim(),
+                uf: document.getElementById('comp-uf').value.trim().toUpperCase(),
+                telefone: document.getElementById('comp-telefone').value.trim(),
+                email: document.getElementById('comp-email').value.trim(),
+                repNome: document.getElementById('comp-rep-nome').value.trim(),
+                repCargo: document.getElementById('comp-rep-cargo').value.trim(),
+                repCpf: document.getElementById('comp-rep-cpf').value.trim(),
+                taxaInicial: Number(document.getElementById('comp-taxa-inicial').value || 0),
+                mensalidade: Number(document.getElementById('comp-mensalidade').value || 0),
+                diaVencimento: Number(document.getElementById('comp-vencimento').value || 30)
+            };
+            companies.push(newComp);
+            saveLocalOnly();
+            pushToGoogleSheets({ action: 'UPSERT_COMPANY', company: newComp });
+            e.target.reset();
+            renderCompaniesModalList();
+            populateCompanySelects();
+            renderDashboard();
+            showToast('Empresa conveniada cadastrada com sucesso!', 'success');
+        }
+
+        function removeCompany(id) {
+            companies = companies.filter(c => c.id !== id);
+            saveLocalOnly();
+            renderCompaniesModalList();
+            populateCompanySelects();
+            renderDashboard();
+        }
+
+        function openInsuranceModal() {
+            document.getElementById('ins-seguradora').value = insuranceConfig.seguradora;
+            document.getElementById('ins-apolice').value = insuranceConfig.apolice;
+            document.getElementById('ins-vigencia').value = insuranceConfig.vigencia;
+            document.getElementById('modal-insurance').classList.remove('hidden');
+        }
+
+        function saveInsuranceConfig() {
+            insuranceConfig = {
+                seguradora: document.getElementById('ins-seguradora').value.trim(),
+                apolice: document.getElementById('ins-apolice').value.trim(),
+                vigencia: document.getElementById('ins-vigencia').value.trim()
+            };
+            saveLocalOnly();
+            closeModal('modal-insurance');
+            showToast('Apólice de seguro atualizada!', 'success');
+        }
+
+        function openSlaModal() {
+            document.getElementById('input-sla-hours').value = slaHours;
+            document.getElementById('modal-sla').classList.remove('hidden');
+        }
+
+        function saveSlaConfig() {
+            slaHours = Math.max(1, Number(document.getElementById('input-sla-hours').value || 48));
+            saveLocalOnly();
+            closeModal('modal-sla');
+            renderDashboard();
+            showToast(`Meta de SLA atualizada para ${slaHours}h.`, 'success');
+        }
+
+        function openSheetsConfigModal() {
+            document.getElementById('sheets-webhook-url').value = webhookUrl;
+            document.getElementById('apps-script-code').textContent = APPS_SCRIPT_TEMPLATE;
+            document.getElementById('modal-sheets-config').classList.remove('hidden');
+        }
+
+        function saveSheetsWebhookUrl() {
+            webhookUrl = document.getElementById('sheets-webhook-url').value.trim();
+            saveLocalOnly();
+            updateSheetsStatusUI();
+            closeModal('modal-sheets-config');
+            if (webhookUrl) syncFromGoogleSheets(true);
+        }
+
+        function copyAppsScriptCode() {
+            copyToClipboard(APPS_SCRIPT_TEMPLATE, 'Código Code.gs copiado!');
+        }
+
+        function updateSheetsStatusUI() {
+            const dot = document.getElementById('sheets-dot');
+            if (dot) {
+                dot.className = webhookUrl ? 'w-2 h-2 rounded-full bg-emerald-500' : 'w-2 h-2 rounded-full bg-amber-500';
+            }
+        }
+
+        // =====================================================================
+        // UTILITÁRIOS (CEP, CSV, FORMATAÇÃO, CLIPBOARD, TOAST)
+        // =====================================================================
+        async function fetchAddressByCep(cep, prefix) {
+            const clean = String(cep || '').replace(/\D/g, '');
+            if (clean.length !== 8) return;
+            try {
+                const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+                const data = await res.json();
+                if (!data.erro) {
+                    if (prefix === 'est') {
+                        document.getElementById('est-rua').value = data.logradouro || '';
+                        document.getElementById('est-bairro').value = data.bairro || '';
+                        document.getElementById('est-cidade').value = data.localidade || '';
+                        document.getElementById('est-uf').value = data.uf || '';
+                    } else if (prefix === 'ie') {
+                        document.getElementById('est-ie-endereco').value = data.logradouro || '';
+                        document.getElementById('est-ie-bairro').value = data.bairro || '';
+                        document.getElementById('est-ie-cidade').value = data.localidade || '';
+                        document.getElementById('est-ie-uf').value = data.uf || '';
+                    } else if (prefix === 'comp') {
+                        document.getElementById('comp-endereco').value = data.logradouro || '';
+                        document.getElementById('comp-bairro').value = data.bairro || '';
+                        document.getElementById('comp-cidade').value = data.localidade || '';
+                        document.getElementById('comp-uf').value = data.uf || '';
+                    }
+                }
+            } catch (e) {}
+        }
+
+        function exportCSV() {
+            const headers = ['Protocolo', 'Status', 'Empresa', 'Estagiario', 'Telefone', 'Supervisor', 'Cargo_Supervisor', 'Inicio', 'Termino', 'Bolsa', 'VT', 'Data_Desligamento'];
+            const rows = requests.map(r => [
+                r.id, r.status, r.companyRazaoSocial, r.nomeEstagiario, r.telefoneEstagiario,
+                r.supervisorNome, r.supervisorCargo, r.dataInicio, r.dataTermino, r.bolsaAuxilio, r.valeTransporte, r.dataDesligamento || ''
+            ].map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(';'));
+
+            const blob = new Blob(['\uFEFF' + [headers.join(';'), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `estagioflow_contratos_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+        }
+
+        function formatDateBR(isoDate) {
+            if (!isoDate) return '-';
+            const parts = String(isoDate).slice(0, 10).split('-');
+            if (parts.length !== 3) return isoDate;
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+
+        function formatMonthBR(ym) {
+            if (!ym) return '-';
+            const [y, m] = ym.split('-');
+            const names = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            return `${names[Number(m) - 1] || m}/${y}`;
+        }
+
+        function formatBRL(val) {
+            return Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function copyToClipboard(text, successMessage) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast(successMessage, 'success');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const colors = {
+                success: 'bg-emerald-900 text-white border-emerald-700',
+                warning: 'bg-amber-900 text-white border-amber-700',
+                error: 'bg-rose-900 text-white border-rose-700',
+                info: 'bg-slate-900 text-white border-slate-700'
+            };
+            const el = document.createElement('div');
+            el.className = `${colors[type] || colors.info} border px-4 py-3 rounded-xl shadow-lg text-xs font-medium pointer-events-auto fade-in`;
+            el.textContent = message;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 4000);
+        }
+    </script>
+</body>
+</html>
