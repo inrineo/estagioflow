@@ -1036,24 +1036,43 @@ function getCompHeaders() {
 }
 function getOrCreateSheet(ss, name, headers) {
   let sh = ss.getSheetByName(name);
-  if (!sh) { sh = ss.insertSheet(name); sh.appendRow(headers); sh.setFrozenRows(1); }
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.appendRow(headers);
+    sh.setFrozenRows(1);
+    return sh;
+  }
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const currentHeaders = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (currentHeaders.indexOf(headers[0]) === -1) {
+    sh.insertRowBefore(1);
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+  }
   return sh;
 }
 function sheetToObjects(sh) {
   const rows = sh.getDataRange().getValues();
   if (rows.length < 2) return [];
   const headers = rows[0];
-  return rows.slice(1).map(r => {
+  const results = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0]) continue;
     const obj = {};
-    headers.forEach((h, i) => obj[h] = r[i]);
-    if (obj.jsonCompleto) { try { return JSON.parse(obj.jsonCompleto); } catch(err) {} }
-    return obj;
-  });
+    headers.forEach((h, idx) => { if (h) obj[h] = r[idx]; });
+    if (obj.jsonCompleto) {
+      try { results.push(JSON.parse(obj.jsonCompleto)); continue; } catch(err) {}
+    }
+    if (obj.id) results.push(obj);
+  }
+  return results;
 }
 function upsertRow(sh, keyField, obj) {
   const data = sh.getDataRange().getValues();
   const headers = data[0];
   const keyIdx = headers.indexOf(keyField);
+  if (keyIdx === -1) return;
   const rowValues = headers.map(h => h === 'jsonCompleto' ? JSON.stringify(obj) : (obj[h] !== undefined ? obj[h] : ''));
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][keyIdx]) === String(obj[keyField])) {
@@ -1110,7 +1129,12 @@ function upsertFinanceRow(sh, req) {
                 if (webhookUrl) syncFromGoogleSheets(false, () => loadInternView(reqIdParam));
             } else {
                 switchView('gestor');
-                if (webhookUrl) syncFromGoogleSheets(false);
+                if (webhookUrl) {
+                    syncFromGoogleSheets(false);
+                    setInterval(() => {
+                        if (!document.hidden) syncFromGoogleSheets(false);
+                    }, 15000);
+                }
             }
 
             lucide.createIcons();
@@ -1949,20 +1973,23 @@ function upsertFinanceRow(sh, req) {
                         </select>
                     </div>
                     <div class="sm:col-span-4">
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Outros Benefícios (VR, VA, Plano de Saúde, etc.)</label>
-                        <input type="text" name="outrosBeneficios" placeholder="Ex: Vale-refeição R$ 20,00/dia (ou deixe em branco)" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
-                    </div>
-                    <div class="sm:col-span-4">
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Plano de Atividades (Obrigatório no TCE - Art. 7º) *</label>
-                        <textarea name="planoAtividades" rows="2" required placeholder="Descreva as atividades práticas compatíveis com o curso..." class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm"></textarea>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Outros Benefícios (Vale-refeição, Vale-alimentação, Plano de saúde, etc.)</label>
+                        <input type="text" name="outrosBeneficios" placeholder="Ex: Vale-refeição R$ 25,00/dia (ou deixe em branco)" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
                     </div>
                 </div>
+
+                <!-- Plano de Atividades (Obrigatório Art. 7º, I - Lei 11.788) -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Plano de Atividades a Serem Desempenhadas (Obrigatório no TCE) *</label>
+                    <textarea name="planoAtividades" rows="2" required placeholder="Descreva as atividades práticas do estagiário correlatas ao curso..." class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm"></textarea>
+                </div>
             `;
+
             container.appendChild(div);
             lucide.createIcons();
         }
 
-        function submitCompanyRequests(e) {
+        async function submitCompanyRequests(e) {
             e.preventDefault();
             const compId = document.getElementById('emp-company-select').value;
             const company = companies.find(c => c.id === compId);
@@ -1971,12 +1998,20 @@ function upsertFinanceRow(sh, req) {
                 return;
             }
 
+            const btn = document.getElementById('btn-submit-empresa');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span>Enviando e salvando...</span>';
+            }
+
             const blocks = document.querySelectorAll('.intern-block');
             const createdProtocols = [];
 
-            blocks.forEach((block, i) => {
+            for (let i = 0; i < blocks.length; i++) {
+                const block = blocks[i];
                 const getVal = (name) => block.querySelector(`[name="${name}"]`)?.value.trim() || '';
-                const protocolId = `TCE-${new Date().getFullYear()}-${String(requests.length + i + 1).padStart(4, '0')}`;
+                const uniqueSuffix = `${String(Date.now()).slice(-5)}${i + 1}`;
+                const protocolId = `TCE-${new Date().getFullYear()}-${uniqueSuffix}`;
 
                 const newReq = normalizeRequest({
                     id: protocolId,
@@ -2019,12 +2054,17 @@ function upsertFinanceRow(sh, req) {
 
                 requests.push(newReq);
                 createdProtocols.push(newReq);
-                pushToGoogleSheets({
+                await pushToGoogleSheets({
                     action: 'UPSERT_REQUEST',
                     request: newReq,
                     history: { from: 'Novo Pedido', to: 'SOLICITADO', origin: 'Portal Empresa' }
                 });
-            });
+            }
+
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i><span>Enviar Solicitação</span>';
+            }
 
             saveLocalOnly();
             document.getElementById('form-empresa').classList.add('hidden');
@@ -2216,59 +2256,219 @@ function upsertFinanceRow(sh, req) {
             if (!req) return;
             const comp = companies.find(c => c.id === req.companyId || c.razaoSocial === req.companyRazaoSocial) || {};
             const d = req.internData || {};
+
+            const formatExtenso = (isoDate) => {
+                if (!isoDate) return '-';
+                const parts = String(isoDate).slice(0, 10).split('-');
+                if (parts.length !== 3) return isoDate;
+                const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+                return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+            };
+
             const hojeExtenso = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+            const inicioExtenso = formatExtenso(req.dataInicio);
+            const terminoExtenso = formatExtenso(req.dataTermino);
+            const isMenor = d.menor18 === 'Sim';
 
             document.getElementById('tce-print-document').innerHTML = `
-                <div class="text-center border-b-2 border-slate-900 pb-3">
-                    <h1 class="text-sm font-extrabold uppercase tracking-wide">CONDIÇÕES GERAIS DE COOPERAÇÃO E TERMO DE COMPROMISSO DE ESTÁGIO</h1>
-                    <p class="text-[11px] text-slate-600 mt-1">Em consonância com a Lei Federal nº 11.788, de 25 de setembro de 2008 • Protocolo ${req.id}</p>
+                <div class="text-center pb-2">
+                    <h1 class="text-sm font-extrabold uppercase tracking-wide text-slate-900">CONDIÇÕES GERAIS DE COOPERAÇÃO E TERMO DE COMPROMISSO DE ESTÁGIO</h1>
+                    <p class="text-[11px] text-slate-700 mt-1 text-justify">
+                        Em consonância com a Lei Federal nº 11.788, de 30 de agosto de 2008, este Termo de Compromisso de Estágio é celebrado entre as partes a seguir nomeadas:
+                    </p>
                 </div>
 
-                <table class="w-full border-collapse border border-slate-400 text-[11px]">
+                <!-- Tabela 1: UNIDADE CONCEDENTE -->
+                <table class="w-full border-collapse border border-slate-500 text-[11px]">
                     <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">UNIDADE CONCEDENTE</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold w-1/3">Razão Social</td><td class="border border-slate-300 p-1.5">${comp.razaoSocial || req.companyRazaoSocial}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">CNPJ</td><td class="border border-slate-300 p-1.5">${comp.cnpj || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Endereço / Bairro</td><td class="border border-slate-300 p-1.5">${comp.endereco || '-'} - ${comp.bairro || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Cidade / UF / CEP</td><td class="border border-slate-300 p-1.5">${comp.cidade || '-'} / ${comp.uf || '-'} • CEP: ${comp.cep || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Telefone / E-mail</td><td class="border border-slate-300 p-1.5">${comp.telefone || '-'} • ${comp.email || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Supervisor de Estágio</td><td class="border border-slate-300 p-1.5">${req.supervisorNome || '-'} (${req.supervisorCargo || '-'})</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Representante Legal</td><td class="border border-slate-300 p-1.5">${comp.repNome || '-'} (${comp.repCargo || '-'})</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Razão Social</td><td class="border border-slate-400 p-1.5">${comp.razaoSocial || req.companyRazaoSocial}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CNPJ</td><td class="border border-slate-400 p-1.5">${comp.cnpj || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Endereço</td><td class="border border-slate-400 p-1.5">${comp.endereco || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Bairro</td><td class="border border-slate-400 p-1.5">${comp.bairro || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cidade | UF</td><td class="border border-slate-400 p-1.5">${comp.cidade || '-'} / ${comp.uf || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CEP</td><td class="border border-slate-400 p-1.5">${comp.cep || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Telefone</td><td class="border border-slate-400 p-1.5">${comp.telefone || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">E-mail</td><td class="border border-slate-400 p-1.5">${comp.email || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Nome do Supervisor de Estágio</td><td class="border border-slate-400 p-1.5">${req.supervisorNome || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cargo do Supervisor de Estágio</td><td class="border border-slate-400 p-1.5">${req.supervisorCargo || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Nome do Representante</td><td class="border border-slate-400 p-1.5">${comp.repNome || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cargo do Representante</td><td class="border border-slate-400 p-1.5">${comp.repCargo || '-'}</td></tr>
                 </table>
 
-                <table class="w-full border-collapse border border-slate-400 text-[11px]">
+                <!-- Tabela 2: INSTITUIÇÃO DE ENSINO -->
+                <table class="w-full border-collapse border border-slate-500 text-[11px]">
                     <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">INSTITUIÇÃO DE ENSINO</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold w-1/3">Nome / Razão Social</td><td class="border border-slate-300 p-1.5">${d.ieNome || 'A preencher'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">CNPJ</td><td class="border border-slate-300 p-1.5">${d.ieCnpj || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Endereço / Bairro</td><td class="border border-slate-300 p-1.5">${d.ieEndereco || '-'} - ${d.ieBairro || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Cidade / UF / CEP</td><td class="border border-slate-300 p-1.5">${d.ieCidade || '-'} / ${d.ieUf || '-'} • CEP: ${d.ieCep || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Telefone / E-mail</td><td class="border border-slate-300 p-1.5">${d.ieTelefone || '-'} • ${d.ieEmail || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Professor Orientador</td><td class="border border-slate-300 p-1.5">${d.ieOrientador || '-'} (${d.ieOrientadorEmail || '-'})</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Nome</td><td class="border border-slate-400 p-1.5">${d.ieNome || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CNPJ</td><td class="border border-slate-400 p-1.5">${d.ieCnpj || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Endereço</td><td class="border border-slate-400 p-1.5">${d.ieEndereco || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Bairro</td><td class="border border-slate-400 p-1.5">${d.ieBairro || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cidade | UF</td><td class="border border-slate-400 p-1.5">${d.ieCidade || '-'} / ${d.ieUf || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CEP</td><td class="border border-slate-400 p-1.5">${d.ieCep || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Telefone</td><td class="border border-slate-400 p-1.5">${d.ieTelefone || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">E-mail</td><td class="border border-slate-400 p-1.5">${d.ieEmail || '-'}</td></tr>
                 </table>
 
-                <table class="w-full border-collapse border border-slate-400 text-[11px]">
+                <!-- Tabela 3: ESTAGIÁRIO -->
+                <table class="w-full border-collapse border border-slate-500 text-[11px]">
                     <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">ESTAGIÁRIO</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold w-1/3">Nome Completo</td><td class="border border-slate-300 p-1.5">${req.nomeEstagiario}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">CPF / RG</td><td class="border border-slate-300 p-1.5">${d.cpf || '-'} • RG: ${d.rg || '-'} (${d.rgOrgao || '-'})</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Endereço</td><td class="border border-slate-300 p-1.5">${d.rua || '-'}, ${d.numero || '-'} - ${d.bairro || '-'}, ${d.cidade || '-'}/${d.uf || '-'} • CEP: ${d.cep || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Telefone / E-mail</td><td class="border border-slate-300 p-1.5">${req.telefoneEstagiario} • ${d.email || '-'}</td></tr>
-                    <tr><td class="border border-slate-300 p-1.5 font-semibold">Curso / Série-Período</td><td class="border border-slate-300 p-1.5">${d.curso || '-'} (${d.nivel || '-'}) • ${d.semestre || '-'} • RA: ${d.ra || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Nome</td><td class="border border-slate-400 p-1.5">${req.nomeEstagiario}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CPF</td><td class="border border-slate-400 p-1.5">${d.cpf || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Endereço</td><td class="border border-slate-400 p-1.5">${d.rua || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Número</td><td class="border border-slate-400 p-1.5">${d.numero || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Bairro</td><td class="border border-slate-400 p-1.5">${d.bairro || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cidade | UF</td><td class="border border-slate-400 p-1.5">${d.cidade || '-'} / ${d.uf || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CEP</td><td class="border border-slate-400 p-1.5">${d.cep || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Telefone</td><td class="border border-slate-400 p-1.5">${req.telefoneEstagiario || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">E-mail</td><td class="border border-slate-400 p-1.5">${d.email || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Nome do Curso</td><td class="border border-slate-400 p-1.5">${d.curso || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Série | Período</td><td class="border border-slate-400 p-1.5">${d.semestre || '-'}</td></tr>
                 </table>
 
-                <div class="space-y-2 text-[11px] text-justify">
-                    <p><strong>Cláusula I.</strong> O Estágio de que trata o presente Termo de Compromisso tem por objetivo propiciar ao Estagiário treinamento prático, aperfeiçoamento técnico, cultural, científico e de relacionamento humano, como complementação da sua formação profissional em ambiente de trabalho, cujas atividades devem ser compatíveis com o curso ao qual se refere, não gerando vínculo empregatício.</p>
-                    <p><strong>Cláusula II (Vigência).</strong> Início do Estágio: <strong>${formatDateBR(req.dataInicio)}</strong> • Término do Estágio: <strong>${formatDateBR(req.dataTermino)}</strong>.</p>
-                    <p><strong>Cláusula III (Apólice de Seguro).</strong> Seguradora: <strong>${insuranceConfig.seguradora}</strong> • Apólice nº <strong>${insuranceConfig.apolice}</strong> • Vigência: <strong>${insuranceConfig.vigencia}</strong>.</p>
-                    <p><strong>Cláusula IV (Jornada e Bolsa).</strong> Carga Horária: <strong>${req.jornadaSemanal} semanais</strong> (${req.jornadaDiaria} diárias) • Dias/Horário: <strong>${req.diasSemana} (${req.horarioTrabalho}, intervalo de ${req.intervalo})</strong> • Setor: <strong>${req.setorAtuacao}</strong> • Bolsa-Auxílio: <strong>R$ ${req.bolsaAuxilio}</strong> • Auxílio-Transporte: <strong>${req.valeTransporte}</strong> • Outros Benefícios: <strong>${req.outrosBeneficios}</strong>.</p>
-                    <p><strong>Cláusula V (Plano de Atividades).</strong> ${req.planoAtividades}</p>
-                    <p><strong>Cláusula VI a XI.</strong> As partes autorizam a Agência Nacional do Primeiro Emprego (ANPE) a atuar como Agente de Integração nos termos do Art. 5º da Lei nº 11.788/2008, ficando eleito o Foro da Comarca de Mauá/SP para dirimir quaisquer dúvidas oriundas deste Termo.</p>
+                <p class="text-[11px] text-justify">
+                    As partes acima identificadas têm, entre si, justo e acertado o presente Termo de Compromisso de Estágio, que se regerá pelas seguintes cláusulas e condições:
+                </p>
+
+                <!-- Cláusula I -->
+                <div class="space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula I.</p>
+                    <p>O Estágio de que trata o presente Termo de Compromisso tem por objetivo propiciar ao Estagiário treinamento prático, aperfeiçoamento técnico, cultural, científico e de relacionamento humano, como complementação da sua formação profissional em ambiente de trabalho, cujas atividades devem ser compatíveis com o curso ao qual se refere, não gerando vínculo empregatício.</p>
                 </div>
 
-                <div class="pt-4 text-right text-[11px]">${comp.cidade || 'Mauá'}, ${hojeExtenso}.</div>
+                <!-- Cláusula II -->
+                <div class="space-y-1.5 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula II.</p>
+                    <p>A vigência do presente Termo de Compromisso de Estágio se estabelece pelo período de realização do Estágio conforme abaixo especificado, podendo este ser renovado.</p>
+                    <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                        <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">PERÍODO DE REALIZAÇÃO DO ESTÁGIO</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Início do Estágio</td><td class="border border-slate-400 p-1.5">${inicioExtenso}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Término do Estágio</td><td class="border border-slate-400 p-1.5">${terminoExtenso}</td></tr>
+                    </table>
+                </div>
 
-                <div class="grid grid-cols-3 gap-4 pt-10 text-center text-[10px]">
-                    <div class="border-t border-slate-800 pt-1"><strong>${d.ieRepNome || 'Instituição de Ensino'}</strong><br>${d.ieNome || 'Carimbo e Assinatura'}</div>
-                    <div class="border-t border-slate-800 pt-1"><strong>${comp.repNome || 'Unidade Concedente'}</strong><br>${comp.razaoSocial || req.companyRazaoSocial}</div>
-                    <div class="border-t border-slate-800 pt-1"><strong>${req.nomeEstagiario}</strong><br>Estagiário(a) ${d.menor18 === 'Sim' ? `/ Resp: ${d.respNome}` : ''}</div>
+                <!-- Cláusula III -->
+                <div class="space-y-1.5 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula III.</p>
+                    <p>Unidade Concedente se compromete a contratar, em favor do Estagiário, Seguro Contra Acidentes Pessoais, como proteção de sua integridade física no local de Estágio, ficando sua manutenção sob sua responsabilidade durante o período de realização do Estágio, sendo proporcionado pela Apólice abaixo especificada.</p>
+                    <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                        <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">APÓLICE DE SEGURO DO ESTAGIÁRIO</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Nome da Seguradora</td><td class="border border-slate-400 p-1.5">${insuranceConfig.seguradora}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Número da Apólice de Seguro</td><td class="border border-slate-400 p-1.5">${insuranceConfig.apolice}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Período de Vigência</td><td class="border border-slate-400 p-1.5">${insuranceConfig.vigencia}</td></tr>
+                    </table>
+                </div>
+
+                <!-- Cláusula IV (Jornada) -->
+                <div class="space-y-1.5 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula IV.</p>
+                    <p>A jornada de trabalho de Estágio deverá ser cumprida pelo Estagiário conforme especificado:</p>
+                    <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                        <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">JORNADA DE TRABALHO</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Carga Horária Total</td><td class="border border-slate-400 p-1.5">${req.jornadaSemanal} semanais</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Carga Horária Diária</td><td class="border border-slate-400 p-1.5">${req.jornadaDiaria}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Dia(s) da Semana: Horário de Entrada/Intervalo/Saída</td><td class="border border-slate-400 p-1.5">${req.diasSemana}: Horário: ${req.horarioTrabalho} / Intervalo: ${req.intervalo}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Setor(es) de Atuação</td><td class="border border-slate-400 p-1.5">${req.setorAtuacao || '-'}</td></tr>
+                    </table>
+                </div>
+
+                <!-- Cláusula V (Bolsa) -->
+                <div class="space-y-1.5 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula V.</p>
+                    <p>O valor da bolsa de complementação educacional deverá ser pago pela Unidade Concedente mensalmente conforme o valor abaixo especificado:</p>
+                    <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                        <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">VALOR DA BOLSA DE COMPLEMENTAÇÃO EDUCACIONAL</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Valor</td><td class="border border-slate-400 p-1.5">R$ ${req.bolsaAuxilio} ${req.valeTransporte ? `• Auxílio-Transporte: ${req.valeTransporte}` : ''} ${req.outrosBeneficios && req.outrosBeneficios !== 'Nenhum' ? `• Outros: ${req.outrosBeneficios}` : ''}</td></tr>
+                    </table>
+                    ${req.planoAtividades ? `<p class="pt-1"><strong>Plano de Atividades (Art. 7º, I):</strong> ${req.planoAtividades}</p>` : ''}
+                </div>
+
+                <!-- Cláusula VI -->
+                <div class="space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula VI.</p>
+                    <p>São competências da Unidade Concedente:</p>
+                    <ul class="list-disc pl-5 space-y-0.5">
+                        <li>Celebrar Termo de Compromisso de Estágio, zelando por seu cumprimento;</li>
+                        <li>Ofertar instalações que proporcionem condições adequadas para o desenvolvimento das atividades do estagiário;</li>
+                        <li>Indicar para exercer a função de Supervisor de Estágio, funcionário de seu quadro de pessoal com formação ou experiência profissional na área de conhecimento desenvolvida no Curso do Estagiário;</li>
+                        <li>Contratar em favor do Estagiário seguro contra acidentes pessoais, cuja apólice seja compatível com valores de mercado, conforme estabelecido no TCE;</li>
+                    </ul>
+                </div>
+
+                <!-- Cláusula VII -->
+                <div class="space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula VII.</p>
+                    <p>São competências do estagiário:</p>
+                    <ul class="list-disc pl-5 space-y-0.5">
+                        <li>Cumprir os deveres estabelecidos no TCE e as normas estabelecidas neste Regulamento;</li>
+                        <li>Desenvolver as atividades de estágio com responsabilidade, apresentando zelo na sua execução;</li>
+                        <li>Zelar pelos equipamentos e bens da Unidade Concedente, assim como respeitar os seus funcionários, regulamentos e normas;</li>
+                        <li>Não divulgar informações confidenciais acessadas ou recebidas no decorrer da realização das atividades de estágio, observando o sigilo profissional;</li>
+                        <li>Participar das reuniões e atividades estipuladas referentes ao Estágio;</li>
+                        <li>Elaborar, com periodicidade mínima de 06 (seis) meses, Relatório de Atividades, conforme especificado no Art. 7º da Lei 11.788, de 25 de setembro de 2008, que dispõe sobre o Estágio de estudantes e encaminhar para o Professor Orientador;</li>
+                    </ul>
+                </div>
+
+                <!-- Cláusula VIII -->
+                <div class="space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula VIII.</p>
+                    <p>Constitui motivo para cancelamento do presente TCE:</p>
+                    <ul class="list-disc pl-5 space-y-0.5">
+                        <li>O descumprimento de cláusula ou condição presente no mesmo;</li>
+                        <li>O aluno que desista do curso, caracterizando abandono de suas atividades escolares ou efetue trancamento da matrícula.</li>
+                        <li>Por desejo de qualquer uma das partes, sem qualquer ônus, devendo ser comunicado com antecedência mínima de 07 (sete) dias.</li>
+                    </ul>
+                </div>
+
+                <!-- Cláusula IX -->
+                <div class="space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula IX.</p>
+                    <p>As partes autorizam a Agência Nacional do Primeiro Emprego a atuar como Agente de Integração, realizando o acompanhamento administrativo do estágio, nos termos do Art. 5º da Lei nº 11.788/2008, sem que isso implique obrigações subsidiárias ou solidárias para a Instituição de Ensino ou para o estudante.</p>
+                </div>
+
+                <!-- Cláusula X -->
+                <div class="space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula X.</p>
+                    <p>Fica eleito o Foro da Comarca de Mauá, para dirimir quaisquer dúvidas ou litígios oriundos deste Termo, com renúncia a qualquer outro, por mais privilegiado que seja.</p>
+                </div>
+
+                <!-- Cláusula XI -->
+                <div class="space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula XI.</p>
+                    <p>Qualquer alteração cabível das informações contidas neste Termo de Compromisso de Estágio, deverá ser implementada por meio de Termo Aditivo de Compromisso de Estágio (TACE).</p>
+                </div>
+
+                <p class="text-[11px] pt-2">
+                    E, por estarem de comum acordo com as condições acima, firmam o presente compromisso em 03 (três) vias de igual teor e forma.
+                </p>
+
+                <div class="pt-2 text-[11px] font-medium">
+                    ${comp.cidade || 'Mauá'}, ${hojeExtenso}
+                </div>
+
+                <!-- Assinaturas -->
+                <div class="grid grid-cols-2 gap-8 pt-10 text-center text-[11px]">
+                    <div class="border-t border-slate-900 pt-1.5">
+                        <strong>${d.ieRepNome || 'Representante da Instituição de Ensino'}</strong><br>
+                        ${d.ieRepCargo || 'Diretor(a)'}<br>
+                        ${d.ieNome || 'Instituição de Ensino'}
+                    </div>
+                    <div class="border-t border-slate-900 pt-1.5">
+                        <strong>${comp.repNome || 'Representante da Unidade Concedente'}</strong><br>
+                        ${comp.repCargo || 'Representante Legal'}<br>
+                        Unidade Concedente
+                    </div>
+                    ${isMenor ? `
+                    <div class="border-t border-slate-900 pt-1.5">
+                        <strong>${d.respNome || 'Responsável Legal'}</strong><br>
+                        Responsável Legal (CPF: ${d.respCpf || '-'})
+                    </div>
+                    <div class="border-t border-slate-900 pt-1.5">
+                        <strong>${req.nomeEstagiario}</strong><br>
+                        Estagiário(a)
+                    </div>` : `
+                    <div class="col-span-2 max-w-xs mx-auto w-full border-t border-slate-900 pt-1.5 mt-4">
+                        <strong>${req.nomeEstagiario}</strong><br>
+                        Estagiário(a)
+                    </div>`}
                 </div>
             `;
             document.getElementById('modal-tce-generator').classList.remove('hidden');
