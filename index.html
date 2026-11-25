@@ -163,7 +163,6 @@
              VIEW 1: PAINEL DO GESTOR (DEMANDAS E SLA)
         =============================================================== -->
         <section id="view-gestor" class="space-y-6">
-            <!-- Aviso se estiver rodando em file:// sem Link Público configurado -->
             <div id="local-file-banner" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div class="flex items-start gap-3">
                     <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 shrink-0 mt-0.5"></i>
@@ -336,7 +335,7 @@
                 </select>
             </div>
 
-            <!-- Tabela / Cards de Estagiários -->
+            <!-- Cards de Estagiários -->
             <div id="estagiarios-base-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </section>
 
@@ -442,7 +441,6 @@
                 </div>
 
                 <form id="form-empresa" onsubmit="submitCompanyRequests(event)" class="space-y-6">
-                    <!-- Seleção Exclusiva da Razão Social -->
                     <div class="bg-brand-50/70 border border-brand-200 rounded-2xl p-4 sm:p-5">
                         <label class="block text-xs font-bold text-brand-900 uppercase tracking-wide mb-2">1. Selecione a Empresa Solicitante (Razão Social) *</label>
                         <select id="emp-company-select" required class="w-full bg-white border border-brand-300 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-600 outline-none">
@@ -450,7 +448,6 @@
                         </select>
                     </div>
 
-                    <!-- Blocos Dinâmicos de Estagiários -->
                     <div class="space-y-4">
                         <div class="flex items-center justify-between">
                             <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wide">2. Dados dos Estagiários e Condições do Estágio</h2>
@@ -1226,5 +1223,1831 @@ function deleteRowByCol(sh, colIdx, keyVal) {
   }
 }`;
 
+        // =====================================================================
+        // ESTADO GLOBAL & CONFIGURAÇÃO
+        // =====================================================================
         let companies = [];
-// ... existing code ... -->
+        let requests = [];
+        let slaHours = 24;
+        let webhookUrl = '';
+        let publicBaseUrl = '';
+        let insuranceConfig = {
+            seguradora: 'Porto Seguro',
+            apolice: '1139573',
+            vigencia: '18/11/2026 à 18/11/2027'
+        };
+
+        const STATUS_MAP = {
+            SOLICITADO: { label: '1. Solicitado pela Empresa', badge: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
+            LINK_ENVIADO: { label: '2. Link Enviado ao Aluno', badge: 'bg-purple-50 text-purple-800 border-purple-200', dot: 'bg-purple-500' },
+            PRONTO_TCE: { label: '3. Pronto para Fazer TCE', badge: 'bg-blue-50 text-blue-800 border-blue-200', dot: 'bg-blue-600' },
+            EM_ASSINATURA: { label: '4. Em Assinatura', badge: 'bg-indigo-50 text-indigo-800 border-indigo-200', dot: 'bg-indigo-600' },
+            CONCLUIDO: { label: '5. Concluído / Ativo', badge: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-600' },
+            DESLIGADO: { label: '6. Desligado / Rescindido', badge: 'bg-rose-50 text-rose-800 border-rose-200', dot: 'bg-rose-600' }
+        };
+
+        function normalizeRequest(r) {
+            if (!r || typeof r !== 'object') return null;
+            return {
+                ...r,
+                id: String(r.id || `TCE-${Date.now()}`),
+                createdAt: r.createdAt || new Date().toISOString(),
+                updatedAt: r.updatedAt || r.createdAt || new Date().toISOString(),
+                status: STATUS_MAP[r.status] ? r.status : 'SOLICITADO',
+                companyId: r.companyId || '',
+                companyRazaoSocial: r.companyRazaoSocial || 'Empresa não informada',
+                nomeEstagiario: r.nomeEstagiario || 'Estagiário sem nome',
+                telefoneEstagiario: r.telefoneEstagiario || '',
+                supervisorNome: r.supervisorNome || '',
+                supervisorCargo: r.supervisorCargo || '',
+                supervisorFormacao: r.supervisorFormacao || '',
+                supervisorEmail: r.supervisorEmail || '',
+                supervisorTelefone: r.supervisorTelefone || '',
+                modalidade: r.modalidade || 'Não obrigatório',
+                setorAtuacao: r.setorAtuacao || '',
+                cargoEstagio: r.cargoEstagio || '',
+                dataInicio: r.dataInicio || '',
+                dataTermino: r.dataTermino || '',
+                vigencia: r.vigencia || '12 meses',
+                jornadaDiaria: r.jornadaDiaria || '6 horas',
+                jornadaSemanal: r.jornadaSemanal || '30 horas',
+                horarioTrabalho: r.horarioTrabalho || '',
+                intervalo: r.intervalo || '15 minutos',
+                diasSemana: r.diasSemana || 'Segunda a Sexta',
+                bolsaAuxilio: r.bolsaAuxilio || '0,00',
+                diaPagamento: r.diaPagamento || '05',
+                valeTransporte: r.valeTransporte || '',
+                outrosBeneficios: r.outrosBeneficios || 'Nenhum',
+                recessoRemunerado: r.recessoRemunerado || '30 dias a cada 12 meses',
+                planoAtividades: r.planoAtividades || '',
+                initialFee: Number(r.initialFee ?? 150),
+                initialFeePaid: Boolean(r.initialFeePaid),
+                initialFeePaidAt: r.initialFeePaidAt || '',
+                monthlyFee: Number(r.monthlyFee ?? 150),
+                installments: (r.installments && typeof r.installments === 'object') ? r.installments : {},
+                dataDesligamento: r.dataDesligamento || '',
+                motivoDesligamento: r.motivoDesligamento || '',
+                internData: (r.internData && typeof r.internData === 'object') ? r.internData : {}
+            };
+        }
+
+        function loadState() {
+            try {
+                const savedCompanies = JSON.parse(localStorage.getItem('estagioflow_companies') || '[]');
+                const savedRequests = JSON.parse(localStorage.getItem('estagioflow_requests') || '[]');
+                slaHours = Number(localStorage.getItem('estagioflow_sla') || 24);
+                webhookUrl = localStorage.getItem('estagioflow_webhook') || '';
+                publicBaseUrl = localStorage.getItem('estagioflow_public_url') || '';
+                const savedIns = JSON.parse(localStorage.getItem('estagioflow_insurance') || 'null');
+                if (savedIns) insuranceConfig = savedIns;
+
+                const urlParams = new URLSearchParams(window.location.search);
+                const apiParam = urlParams.get('api');
+                if (apiParam) {
+                    webhookUrl = decodeURIComponent(apiParam);
+                    localStorage.setItem('estagioflow_webhook', webhookUrl);
+                }
+
+                companies = Array.isArray(savedCompanies) ? savedCompanies : [];
+                requests = Array.isArray(savedRequests) ? savedRequests.map(normalizeRequest).filter(Boolean) : [];
+            } catch (err) {
+                console.error('Erro ao carregar dados locais:', err);
+            }
+        }
+
+        function saveLocalOnly() {
+            localStorage.setItem('estagioflow_companies', JSON.stringify(companies));
+            localStorage.setItem('estagioflow_requests', JSON.stringify(requests));
+            localStorage.setItem('estagioflow_sla', String(slaHours));
+            localStorage.setItem('estagioflow_webhook', webhookUrl);
+            localStorage.setItem('estagioflow_public_url', publicBaseUrl);
+            localStorage.setItem('estagioflow_insurance', JSON.stringify(insuranceConfig));
+        }
+
+        // =====================================================================
+        // SINCRONIZAÇÃO GOOGLE SHEETS
+        // =====================================================================
+        async function pushToGoogleSheets(payload) {
+            if (!webhookUrl) return false;
+            try {
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                return true;
+            } catch (err) {
+                console.error('Erro ao enviar ao Google Sheets:', err);
+                return false;
+            }
+        }
+
+        async function syncFromGoogleSheets(showNotify = false, callback = null) {
+            updateSheetsStatusIndicator();
+            if (!webhookUrl) {
+                if (showNotify) showToast('Configure a URL do Google Apps Script no botão Sheets primeiro.', 'amber');
+                if (callback) callback();
+                return;
+            }
+            try {
+                const res = await fetch(`${webhookUrl}?t=${Date.now()}`);
+                const data = await res.json();
+                if (data && data.ok) {
+                    if (Array.isArray(data.companies) && data.companies.length > 0) {
+                        const mapComp = new Map(companies.map(c => [String(c.id), c]));
+                        data.companies.forEach(c => { if (c && c.id) mapComp.set(String(c.id), c); });
+                        companies = Array.from(mapComp.values());
+                    }
+                    if (Array.isArray(data.requests)) {
+                        const mapReq = new Map(requests.map(r => [String(r.id), r]));
+                        data.requests.forEach(raw => {
+                            const norm = normalizeRequest(raw);
+                            if (norm && norm.id) mapReq.set(String(norm.id), norm);
+                        });
+                        requests = Array.from(mapReq.values());
+                    }
+                    saveLocalOnly();
+                    refreshAllSelects();
+                    renderCurrentView();
+                    if (showNotify) showToast('Sincronizado com sucesso com o Google Sheets!', 'emerald');
+                }
+            } catch (err) {
+                console.warn('Falha ao ler do Google Sheets:', err);
+                if (showNotify) showToast('Não foi possível ler da planilha. Verifique a permissão do App da Web.', 'rose');
+            } finally {
+                if (callback) callback();
+            }
+        }
+
+        function updateSheetsStatusIndicator() {
+            const dot = document.getElementById('sheets-dot');
+            if (!dot) return;
+            if (webhookUrl) {
+                dot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+            } else {
+                dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+            }
+        }
+
+        // =====================================================================
+        // UTILITÁRIOS DE DATA, MOEDA E LINKS PÚBLICOS
+        // =====================================================================
+        function showToast(msg, color = 'slate') {
+            const container = document.getElementById('toast-container');
+            const colors = {
+                emerald: 'bg-emerald-900 text-white border-emerald-700',
+                amber: 'bg-amber-800 text-white border-amber-600',
+                rose: 'bg-rose-900 text-white border-rose-700',
+                slate: 'bg-slate-900 text-white border-slate-700'
+            };
+            const el = document.createElement('div');
+            el.className = `${colors[color] || colors.slate} border px-4 py-3 rounded-xl shadow-lg text-xs font-medium pointer-events-auto transition-all`;
+            el.textContent = msg;
+            container.appendChild(el);
+            setTimeout(() => { el.remove(); }, 4000);
+        }
+
+        function copyToClipboard(text, successMsg = 'Link copiado!') {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand('copy');
+                showToast(successMsg, 'emerald');
+            } catch (e) {
+                showToast('Não foi possível copiar automaticamente.', 'rose');
+            }
+            document.body.removeChild(ta);
+        }
+
+        function formatBRL(val) {
+            return Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        function formatDateBR(iso) {
+            if (!iso) return '-';
+            const p = String(iso).slice(0, 10).split('-');
+            if (p.length !== 3) return iso;
+            return `${p[2]}/${p[1]}/${p[0]}`;
+        }
+
+        function getEffectiveBaseUrl() {
+            if (publicBaseUrl && publicBaseUrl.startsWith('http')) {
+                return publicBaseUrl.split('?')[0].replace(/\/+$/, '') + '/';
+            }
+            if (window.location.protocol.startsWith('http')) {
+                return window.location.origin + window.location.pathname;
+            }
+            return '';
+        }
+
+        function buildPortalLink(paramsObj) {
+            const base = getEffectiveBaseUrl();
+            if (!base) return null;
+            const url = new URL(base);
+            Object.entries(paramsObj).forEach(([k, v]) => {
+                if (v) url.searchParams.set(k, v);
+            });
+            if (webhookUrl) url.searchParams.set('api', webhookUrl);
+            return url.toString();
+        }
+
+        function copyCompanyPortalLink() {
+            const link = buildPortalLink({ view: 'empresa' });
+            if (!link) {
+                openPublicUrlModal();
+                showToast('Configure primeiro o Link Público hospedado (GitHub Pages).', 'amber');
+                return;
+            }
+            copyToClipboard(link, 'Link da Empresa copiado para a área de transferência!');
+        }
+
+        function getInternPortalLink(reqId) {
+            return buildPortalLink({ view: 'estagiario', id: reqId });
+        }
+
+        // =====================================================================
+        // NAVEGAÇÃO ENTRE VIEWS E MODAIS
+        // =====================================================================
+        let currentView = 'gestor';
+
+        function switchView(viewName) {
+            currentView = viewName;
+            const views = ['gestor', 'estagiarios_lista', 'empresas_lista', 'financeiro', 'empresa', 'estagiario'];
+            views.forEach(v => {
+                const el = document.getElementById(`view-${v}`);
+                if (el) el.classList.toggle('hidden', v !== viewName);
+            });
+
+            const navTabs = ['gestor', 'estagiarios_lista', 'empresas_lista', 'financeiro'];
+            navTabs.forEach(t => {
+                const btn = document.getElementById(`nav-${t}`);
+                if (btn) {
+                    btn.className = `px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${t === viewName ? 'tab-active' : 'tab-inactive'}`;
+                }
+            });
+
+            const isExternalPortal = (viewName === 'empresa' || viewName === 'estagiario');
+            const urlView = new URLSearchParams(window.location.search).get('view');
+            document.getElementById('gestor-nav').classList.toggle('hidden', isExternalPortal && !!urlView);
+            document.getElementById('gestor-actions').classList.toggle('hidden', isExternalPortal && !!urlView);
+            document.getElementById('btn-back-gestor-emp').classList.toggle('hidden', !!urlView);
+
+            renderCurrentView();
+            lucide.createIcons();
+        }
+
+        function renderCurrentView() {
+            if (currentView === 'gestor') renderDashboard();
+            if (currentView === 'estagiarios_lista') renderEstagiariosBase();
+            if (currentView === 'empresas_lista') renderCompaniesBase();
+            if (currentView === 'financeiro') renderFinanceiro();
+            if (currentView === 'empresa') {
+                refreshAllSelects();
+                if (document.getElementById('intern-blocks-container').children.length === 0) {
+                    addInternBlock();
+                }
+            }
+        }
+
+        function closeModal(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        }
+
+        // =====================================================================
+        // CADASTRO DE EMPRESAS CONVENIADAS
+        // =====================================================================
+        function openCompanyFormModal(companyId = null) {
+            document.getElementById('form-company-register').reset();
+            document.getElementById('comp-id').value = '';
+            document.getElementById('modal-company-title').textContent = 'Cadastrar Empresa Conveniada';
+
+            if (companyId) {
+                const c = companies.find(item => item.id === companyId);
+                if (c) {
+                    document.getElementById('modal-company-title').textContent = 'Editar Empresa Conveniada';
+                    document.getElementById('comp-id').value = c.id;
+                    document.getElementById('comp-razao').value = c.razaoSocial || '';
+                    document.getElementById('comp-cnpj').value = c.cnpj || '';
+                    document.getElementById('comp-fantasia').value = c.nomeFantasia || '';
+                    document.getElementById('comp-ramo').value = c.ramoAtividade || '';
+                    document.getElementById('comp-quota').value = c.quotaEmpregados || '1 a 5';
+                    document.getElementById('comp-cep').value = c.cep || '';
+                    document.getElementById('comp-endereco').value = c.endereco || '';
+                    document.getElementById('comp-bairro').value = c.bairro || '';
+                    document.getElementById('comp-cidade').value = c.cidade || '';
+                    document.getElementById('comp-uf').value = c.uf || '';
+                    document.getElementById('comp-telefone').value = c.telefone || '';
+                    document.getElementById('comp-email').value = c.email || '';
+                    document.getElementById('comp-rep-nome').value = c.repNome || '';
+                    document.getElementById('comp-rep-cargo').value = c.repCargo || '';
+                    document.getElementById('comp-rep-cpf').value = c.repCpf || '';
+                    document.getElementById('comp-taxa-inicial').value = c.taxaInicial ?? 150;
+                    document.getElementById('comp-mensalidade').value = c.mensalidade ?? 150;
+                    document.getElementById('comp-vencimento').value = c.diaVencimento ?? 30;
+                }
+            }
+            document.getElementById('modal-company-form').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        async function saveCompany(e) {
+            e.preventDefault();
+            const existingId = document.getElementById('comp-id').value;
+            const compObj = {
+                id: existingId || `EMP-${Date.now()}`,
+                razaoSocial: document.getElementById('comp-razao').value.trim(),
+                cnpj: document.getElementById('comp-cnpj').value.trim(),
+                nomeFantasia: document.getElementById('comp-fantasia').value.trim(),
+                ramoAtividade: document.getElementById('comp-ramo').value.trim(),
+                quotaEmpregados: document.getElementById('comp-quota').value,
+                cep: document.getElementById('comp-cep').value.trim(),
+                endereco: document.getElementById('comp-endereco').value.trim(),
+                bairro: document.getElementById('comp-bairro').value.trim(),
+                cidade: document.getElementById('comp-cidade').value.trim(),
+                uf: document.getElementById('comp-uf').value.trim().toUpperCase(),
+                telefone: document.getElementById('comp-telefone').value.trim(),
+                email: document.getElementById('comp-email').value.trim(),
+                repNome: document.getElementById('comp-rep-nome').value.trim(),
+                repCargo: document.getElementById('comp-rep-cargo').value.trim(),
+                repCpf: document.getElementById('comp-rep-cpf').value.trim(),
+                taxaInicial: Number(document.getElementById('comp-taxa-inicial').value || 0),
+                mensalidade: Number(document.getElementById('comp-mensalidade').value || 0),
+                diaVencimento: Number(document.getElementById('comp-vencimento').value || 30)
+            };
+
+            if (existingId) {
+                const idx = companies.findIndex(c => c.id === existingId);
+                if (idx >= 0) companies[idx] = compObj;
+            } else {
+                companies.push(compObj);
+            }
+
+            saveLocalOnly();
+            refreshAllSelects();
+            renderCompaniesBase();
+            closeModal('modal-company-form');
+            showToast('Empresa salva com sucesso!', 'emerald');
+            await pushToGoogleSheets({ action: 'UPSERT_COMPANY', company: compObj });
+        }
+
+        function refreshAllSelects() {
+            const sorted = [...companies].sort((a, b) => String(a.razaoSocial).localeCompare(String(b.razaoSocial)));
+            const selects = ['emp-company-select', 'filter-company', 'est-list-company'];
+            selects.forEach(selId => {
+                const sel = document.getElementById(selId);
+                if (!sel) return;
+                const prev = sel.value;
+                const isFilter = selId !== 'emp-company-select';
+                sel.innerHTML = isFilter
+                    ? '<option value="ALL">Todas as Empresas</option>'
+                    : '<option value="">-- Selecione a Razão Social da Empresa --</option>';
+
+                sorted.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = isFilter ? c.razaoSocial : c.id;
+                    opt.textContent = c.razaoSocial;
+                    sel.appendChild(opt);
+                });
+                if (prev) sel.value = prev;
+            });
+        }
+
+        function renderCompaniesBase() {
+            const container = document.getElementById('companies-base-list');
+            if (!container) return;
+            const search = (document.getElementById('comp-list-search')?.value || '').toLowerCase();
+
+            const filtered = companies.filter(c => {
+                return String(c.razaoSocial || '').toLowerCase().includes(search) ||
+                       String(c.nomeFantasia || '').toLowerCase().includes(search) ||
+                       String(c.cnpj || '').toLowerCase().includes(search);
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center space-y-2">
+                        <p class="text-sm font-bold text-slate-700">Nenhuma empresa encontrada</p>
+                        <p class="text-xs text-slate-500">Cadastre as empresas concedentes para que apareçam na lista de solicitação.</p>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(c => {
+                const activeCount = requests.filter(r => (r.companyId === c.id || r.companyRazaoSocial === c.razaoSocial) && r.status !== 'DESLIGADO').length;
+                return `
+                    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between gap-4">
+                        <div class="space-y-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <h3 class="text-sm font-extrabold text-slate-900">${c.razaoSocial}</h3>
+                                    <p class="text-xs text-slate-500">${c.nomeFantasia || 'Sem nome fantasia'} • CNPJ: ${c.cnpj || '-'}</p>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-brand-50 text-brand-700 border border-brand-200 shrink-0">
+                                    ${activeCount} estagiário(s)
+                                </span>
+                            </div>
+                            <div class="text-xs text-slate-600 space-y-1 pt-2 border-t border-slate-100">
+                                <p><strong>Endereço:</strong> ${c.endereco || '-'}, ${c.bairro || '-'} • ${c.cidade || '-'}/${c.uf || '-'} (CEP ${c.cep || '-'})</p>
+                                <p><strong>Representante Legal:</strong> ${c.repNome || '-'} (${c.repCargo || '-'}) • CPF: ${c.repCpf || '-'}</p>
+                                <p><strong>Contato:</strong> ${c.telefone || '-'} • ${c.email || '-'}</p>
+                                <p><strong>Acordo Financeiro:</strong> Taxa Inicial ${formatBRL(c.taxaInicial)} • Mensalidade ${formatBRL(c.mensalidade)} (Venc. dia ${c.diaVencimento || 30})</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button type="button" onclick="filterInternsByCompany('${c.razaoSocial.replace(/'/g, "\\'")}')" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold">
+                                Ver Estagiários
+                            </button>
+                            <button type="button" onclick="openCompanyFormModal('${c.id}')" class="px-3 py-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-semibold">
+                                Editar Cadastro
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        function filterInternsByCompany(razaoSocial) {
+            switchView('estagiarios_lista');
+            const sel = document.getElementById('est-list-company');
+            if (sel) sel.value = razaoSocial;
+            renderEstagiariosBase();
+        }
+
+        // =====================================================================
+        // PORTAL DA EMPRESA SOLICITANTE
+        // =====================================================================
+        let internBlockCounter = 0;
+
+        function addInternBlock() {
+            internBlockCounter++;
+            const idx = internBlockCounter;
+            const container = document.getElementById('intern-blocks-container');
+            const div = document.createElement('div');
+            div.className = 'intern-block bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 relative';
+            div.innerHTML = `
+                <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                    <span class="text-xs font-extrabold uppercase tracking-wider text-brand-900">Estagiário #${idx}</span>
+                    ${idx > 1 ? `<button type="button" onclick="this.closest('.intern-block').remove()" class="text-xs text-rose-600 hover:underline font-semibold">Remover</button>` : ''}
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div class="sm:col-span-7">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Nome Completo do Estagiário *</label>
+                        <input type="text" name="nomeEstagiario" required placeholder="Nome completo sem abreviações" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+                    <div class="sm:col-span-5">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">WhatsApp / Telefone do Estagiário *</label>
+                        <input type="tel" name="telefoneEstagiario" required placeholder="(11) 99999-9999" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+                    </div>
+
+                    <!-- Supervisor -->
+                    <div class="sm:col-span-12 pt-1 font-bold text-xs text-slate-800">Supervisor do Estágio na Empresa (Art. 9º, III - Lei 11.788)</div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Nome Completo do Supervisor *</label>
+                        <input type="text" name="supervisorNome" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Cargo do Supervisor *</label>
+                        <input type="text" name="supervisorCargo" required placeholder="Ex: Gerente / Coordenador" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Formação / Área de Atuação *</label>
+                        <input type="text" name="supervisorFormacao" required placeholder="Ex: Administração" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-6">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">E-mail do Supervisor *</label>
+                        <input type="email" name="supervisorEmail" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-6">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Telefone do Supervisor *</label>
+                        <input type="tel" name="supervisorTelefone" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+
+                    <!-- Condições -->
+                    <div class="sm:col-span-12 pt-1 font-bold text-xs text-slate-800">Condições, Vigência e Jornada</div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Modalidade *</label>
+                        <select name="modalidade" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                            <option value="Não obrigatório">Não obrigatório</option>
+                            <option value="Obrigatório">Obrigatório (grade curricular)</option>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Setor / Área de Atuação *</label>
+                        <input type="text" name="setorAtuacao" required placeholder="Ex: Administrativo / Marketing" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Cargo / Título do Estágio *</label>
+                        <input type="text" name="cargoEstagio" required placeholder="Ex: Estagiário Administrativo" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Data de Início *</label>
+                        <input type="date" name="dataInicio" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Data de Término *</label>
+                        <input type="date" name="dataTermino" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Vigência *</label>
+                        <select name="vigencia" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                            <option value="12 meses">12 meses (1 ano)</option>
+                            <option value="6 meses">6 meses</option>
+                            <option value="24 meses">24 meses (2 anos)</option>
+                            <option value="Outra">Outra vigência</option>
+                        </select>
+                    </div>
+
+                    <div class="sm:col-span-3">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Jornada Diária *</label>
+                        <input type="text" name="jornadaDiaria" value="6 horas" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Jornada Semanal *</label>
+                        <input type="text" name="jornadaSemanal" value="30 horas" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Horário (Entrada e Saída) *</label>
+                        <input type="text" name="horarioTrabalho" required placeholder="Ex: 09:00 às 15:00" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Intervalo *</label>
+                        <input type="text" name="intervalo" value="15 minutos" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+
+                    <div class="sm:col-span-6">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Dias da Semana que Irá Trabalhar *</label>
+                        <input type="text" name="diasSemana" value="Segunda a Sexta" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Bolsa-Auxílio (R$) *</label>
+                        <input type="text" name="bolsaAuxilio" required placeholder="Ex: 1.000,00" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Dia Pagamento *</label>
+                        <input type="text" name="diaPagamento" value="05/mês" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Ajuda de Custo / VT *</label>
+                        <input type="text" name="valeTransporte" required placeholder="Ex: R$ 12,00/dia ou Integral" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Outros Benefícios</label>
+                        <input type="text" name="outrosBeneficios" placeholder="Ex: Vale-refeição, Plano de saúde..." class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Recesso Remunerado *</label>
+                        <select name="recessoRemunerado" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm">
+                            <option value="30 dias a cada 12 meses">30 dias a cada 12 meses</option>
+                            <option value="Proporcional (inferior a 12 meses)">Proporcional (inferior a 12 meses)</option>
+                        </select>
+                    </div>
+
+                    <div class="sm:col-span-12">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Plano de Atividades a Serem Desempenhadas (Obrigatório no TCE - Art. 7º) *</label>
+                        <textarea name="planoAtividades" rows="2" required placeholder="Descreva as atividades práticas compatíveis com o curso..." class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm"></textarea>
+                    </div>
+                </div>
+            `;
+            container.appendChild(div);
+            lucide.createIcons();
+        }
+
+        async function submitCompanyRequests(e) {
+            e.preventDefault();
+            const compId = document.getElementById('emp-company-select').value;
+            const company = companies.find(c => c.id === compId);
+            if (!company) {
+                showToast('Selecione uma empresa válida na lista.', 'rose');
+                return;
+            }
+
+            const btn = document.getElementById('btn-submit-empresa');
+            btn.disabled = true;
+            btn.innerHTML = '<span>Enviando e gravando...</span>';
+
+            const blocks = document.querySelectorAll('.intern-block');
+            const created = [];
+
+            for (let i = 0; i < blocks.length; i++) {
+                const b = blocks[i];
+                const g = (name) => b.querySelector(`[name="${name}"]`)?.value.trim() || '';
+                const uniqueCode = `${String(Date.now()).slice(-5)}${i + 1}`;
+                const protocolId = `TCE-${new Date().getFullYear()}-${uniqueCode}`;
+
+                const newReq = normalizeRequest({
+                    id: protocolId,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    status: 'SOLICITADO',
+                    companyId: company.id,
+                    companyRazaoSocial: company.razaoSocial,
+                    nomeEstagiario: g('nomeEstagiario'),
+                    telefoneEstagiario: g('telefoneEstagiario'),
+                    supervisorNome: g('supervisorNome'),
+                    supervisorCargo: g('supervisorCargo'),
+                    supervisorFormacao: g('supervisorFormacao'),
+                    supervisorEmail: g('supervisorEmail'),
+                    supervisorTelefone: g('supervisorTelefone'),
+                    modalidade: g('modalidade'),
+                    setorAtuacao: g('setorAtuacao'),
+                    cargoEstagio: g('cargoEstagio'),
+                    dataInicio: g('dataInicio'),
+                    dataTermino: g('dataTermino'),
+                    vigencia: g('vigencia'),
+                    jornadaDiaria: g('jornadaDiaria'),
+                    jornadaSemanal: g('jornadaSemanal'),
+                    horarioTrabalho: g('horarioTrabalho'),
+                    intervalo: g('intervalo'),
+                    diasSemana: g('diasSemana'),
+                    bolsaAuxilio: g('bolsaAuxilio'),
+                    diaPagamento: g('diaPagamento'),
+                    valeTransporte: g('valeTransporte'),
+                    outrosBeneficios: g('outrosBeneficios') || 'Nenhum',
+                    recessoRemunerado: g('recessoRemunerado'),
+                    planoAtividades: g('planoAtividades'),
+                    initialFee: Number(company.taxaInicial ?? 150),
+                    initialFeePaid: false,
+                    monthlyFee: Number(company.mensalidade ?? 150),
+                    installments: {},
+                    internData: {}
+                });
+
+                requests.push(newReq);
+                created.push(newReq);
+                await pushToGoogleSheets({
+                    action: 'UPSERT_REQUEST',
+                    request: newReq,
+                    history: { from: 'Novo Pedido', to: 'SOLICITADO', origin: 'Portal Empresa' }
+                });
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i><span>Enviar Solicitação de Contrato(s)</span>';
+
+            saveLocalOnly();
+            document.getElementById('form-empresa').classList.add('hidden');
+            document.getElementById('empresa-success-box').classList.remove('hidden');
+            document.getElementById('empresa-protocols-list').innerHTML = created.map(r => `
+                <div class="flex items-center justify-between border-b border-slate-200 last:border-0 pb-1.5 last:pb-0">
+                    <span class="font-bold text-slate-800">${r.nomeEstagiario}</span>
+                    <span class="font-mono font-bold text-brand-700">${r.id}</span>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function resetCompanyForm() {
+            document.getElementById('form-empresa').reset();
+            document.getElementById('intern-blocks-container').innerHTML = '';
+            internBlockCounter = 0;
+            addInternBlock();
+            document.getElementById('empresa-success-box').classList.add('hidden');
+            document.getElementById('form-empresa').classList.remove('hidden');
+        }
+
+        // =====================================================================
+        // PORTAL DO ESTAGIÁRIO
+        // =====================================================================
+        function loadInternView(reqId) {
+            const req = requests.find(r => String(r.id) === String(reqId));
+            const summaryEl = document.getElementById('est-vaga-summary');
+
+            if (!req) {
+                summaryEl.innerHTML = `<p class="text-rose-700 font-bold">Solicitação (${reqId || 'não informada'}) não encontrada. Solicite um link atualizado ao atendimento.</p>`;
+                return;
+            }
+
+            document.getElementById('est-req-id').value = req.id;
+            document.getElementById('est-nome').value = req.nomeEstagiario || '';
+            document.getElementById('est-telefone').value = req.telefoneEstagiario || '';
+
+            summaryEl.innerHTML = `
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <p><strong>Protocolo:</strong> ${req.id}</p>
+                    <p><strong>Empresa Concedente:</strong> ${req.companyRazaoSocial}</p>
+                    <p><strong>Cargo / Setor:</strong> ${req.cargoEstagio || '-'} (${req.setorAtuacao || '-'})</p>
+                    <p><strong>Vigência:</strong> ${formatDateBR(req.dataInicio)} até ${formatDateBR(req.dataTermino)}</p>
+                    <p><strong>Jornada:</strong> ${req.diasSemana} • ${req.horarioTrabalho}</p>
+                    <p><strong>Bolsa / Benefícios:</strong> R$ ${req.bolsaAuxilio} • VT: ${req.valeTransporte}</p>
+                </div>
+            `;
+
+            const d = req.internData || {};
+            if (d.nascimento) document.getElementById('est-nascimento').value = d.nascimento;
+            if (d.cpf) document.getElementById('est-cpf').value = d.cpf;
+            if (d.rg) document.getElementById('est-rg').value = d.rg;
+            if (d.rgOrgao) document.getElementById('est-rg-orgao').value = d.rgOrgao;
+            if (d.nacionalidade) document.getElementById('est-nacionalidade').value = d.nacionalidade;
+            if (d.naturalidade) document.getElementById('est-naturalidade').value = d.naturalidade;
+            if (d.estadoCivil) document.getElementById('est-estado-civil').value = d.estadoCivil;
+            if (d.email) document.getElementById('est-email').value = d.email;
+            if (d.pis) document.getElementById('est-pis').value = d.pis;
+            if (d.menor18) document.getElementById('est-menor18').value = d.menor18;
+            if (d.respNome) document.getElementById('est-resp-nome').value = d.respNome;
+            if (d.respCpf) document.getElementById('est-resp-cpf').value = d.respCpf;
+            if (d.respParentesco) document.getElementById('est-resp-parentesco').value = d.respParentesco;
+            if (d.respTelefone) document.getElementById('est-resp-telefone').value = d.respTelefone;
+            if (d.respEmail) document.getElementById('est-resp-email').value = d.respEmail;
+
+            if (d.cep) document.getElementById('est-cep').value = d.cep;
+            if (d.rua) document.getElementById('est-rua').value = d.rua;
+            if (d.numero) document.getElementById('est-numero').value = d.numero;
+            if (d.bairro) document.getElementById('est-bairro').value = d.bairro;
+            if (d.cidade) document.getElementById('est-cidade').value = d.cidade;
+            if (d.uf) document.getElementById('est-uf').value = d.uf;
+
+            if (d.ieNome) document.getElementById('est-ie-nome').value = d.ieNome;
+            if (d.ieCnpj) document.getElementById('est-ie-cnpj').value = d.ieCnpj;
+            if (d.ieCep) document.getElementById('est-ie-cep').value = d.ieCep;
+            if (d.ieEndereco) document.getElementById('est-ie-endereco').value = d.ieEndereco;
+            if (d.ieBairro) document.getElementById('est-ie-bairro').value = d.ieBairro;
+            if (d.ieCidade) document.getElementById('est-ie-cidade').value = d.ieCidade;
+            if (d.ieUf) document.getElementById('est-ie-uf').value = d.ieUf;
+            if (d.ieTelefone) document.getElementById('est-ie-telefone').value = d.ieTelefone;
+            if (d.ieEmail) document.getElementById('est-ie-email').value = d.ieEmail;
+            if (d.ieRepNome) document.getElementById('est-ie-rep-nome').value = d.ieRepNome;
+            if (d.ieRepCargo) document.getElementById('est-ie-rep-cargo').value = d.ieRepCargo;
+            if (d.ieRepCpf) document.getElementById('est-ie-rep-cpf').value = d.ieRepCpf;
+            if (d.ieOrientador) document.getElementById('est-ie-orientador').value = d.ieOrientador;
+            if (d.ieOrientadorEmail) document.getElementById('est-ie-orientador-email').value = d.ieOrientadorEmail;
+
+            if (d.curso) document.getElementById('est-curso').value = d.curso;
+            if (d.nivel) document.getElementById('est-nivel').value = d.nivel;
+            if (d.ra) document.getElementById('est-ra').value = d.ra;
+            if (d.semestre) document.getElementById('est-semestre').value = d.semestre;
+            if (d.turno) document.getElementById('est-turno').value = d.turno;
+            if (d.conclusao) document.getElementById('est-conclusao').value = d.conclusao;
+            if (d.cargaCurso) document.getElementById('est-carga-curso').value = d.cargaCurso;
+
+            toggleMinorFields();
+        }
+
+        function checkInternMinorAge() {
+            const birthVal = document.getElementById('est-nascimento').value;
+            if (!birthVal) return;
+            const birth = new Date(birthVal + 'T00:00:00');
+            const today = new Date();
+            let age = today.getFullYear() - birth.getFullYear();
+            const m = today.getMonth() - birth.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+
+            document.getElementById('est-menor18').value = age < 18 ? 'Sim' : 'Não';
+            toggleMinorFields();
+        }
+
+        function toggleMinorFields() {
+            const isMinor = document.getElementById('est-menor18').value === 'Sim';
+            const box = document.getElementById('minor-fields-box');
+            box.classList.toggle('hidden', !isMinor);
+            ['est-resp-nome', 'est-resp-cpf', 'est-resp-telefone'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.required = isMinor;
+            });
+        }
+
+        async function fetchCep(cepValue, prefix) {
+            const clean = String(cepValue || '').replace(/\D/g, '');
+            if (clean.length !== 8) return;
+            try {
+                const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+                const data = await res.json();
+                if (data.erro) return;
+                if (prefix === 'est') {
+                    document.getElementById('est-rua').value = data.logradouro || '';
+                    document.getElementById('est-bairro').value = data.bairro || '';
+                    document.getElementById('est-cidade').value = data.localidade || '';
+                    document.getElementById('est-uf').value = data.uf || '';
+                } else if (prefix === 'ie') {
+                    document.getElementById('est-ie-endereco').value = data.logradouro || '';
+                    document.getElementById('est-ie-bairro').value = data.bairro || '';
+                    document.getElementById('est-ie-cidade').value = data.localidade || '';
+                    document.getElementById('est-ie-uf').value = data.uf || '';
+                } else if (prefix === 'comp') {
+                    document.getElementById('comp-endereco').value = data.logradouro || '';
+                    document.getElementById('comp-bairro').value = data.bairro || '';
+                    document.getElementById('comp-cidade').value = data.localidade || '';
+                    document.getElementById('comp-uf').value = data.uf || '';
+                }
+            } catch (e) {}
+        }
+
+        async function submitInternData(e) {
+            e.preventDefault();
+            const reqId = document.getElementById('est-req-id').value;
+            const req = requests.find(r => String(r.id) === String(reqId));
+            if (!req) {
+                showToast('Solicitação não encontrada.', 'rose');
+                return;
+            }
+
+            const btn = document.getElementById('btn-submit-estagiario');
+            btn.disabled = true;
+            btn.innerHTML = '<span>Enviando ficha...</span>';
+
+            const oldStatus = req.status;
+            req.nomeEstagiario = document.getElementById('est-nome').value.trim();
+            req.telefoneEstagiario = document.getElementById('est-telefone').value.trim();
+            req.status = 'PRONTO_TCE';
+            req.updatedAt = new Date().toISOString();
+
+            req.internData = {
+                nascimento: document.getElementById('est-nascimento').value,
+                cpf: document.getElementById('est-cpf').value.trim(),
+                rg: document.getElementById('est-rg').value.trim(),
+                rgOrgao: document.getElementById('est-rg-orgao').value.trim(),
+                nacionalidade: document.getElementById('est-nacionalidade').value.trim(),
+                naturalidade: document.getElementById('est-naturalidade').value.trim(),
+                estadoCivil: document.getElementById('est-estado-civil').value,
+                email: document.getElementById('est-email').value.trim(),
+                pis: document.getElementById('est-pis').value.trim(),
+                menor18: document.getElementById('est-menor18').value,
+                respNome: document.getElementById('est-resp-nome').value.trim(),
+                respCpf: document.getElementById('est-resp-cpf').value.trim(),
+                respParentesco: document.getElementById('est-resp-parentesco').value,
+                respTelefone: document.getElementById('est-resp-telefone').value.trim(),
+                respEmail: document.getElementById('est-resp-email').value.trim(),
+                cep: document.getElementById('est-cep').value.trim(),
+                rua: document.getElementById('est-rua').value.trim(),
+                numero: document.getElementById('est-numero').value.trim(),
+                bairro: document.getElementById('est-bairro').value.trim(),
+                cidade: document.getElementById('est-cidade').value.trim(),
+                uf: document.getElementById('est-uf').value.trim().toUpperCase(),
+                ieNome: document.getElementById('est-ie-nome').value.trim(),
+                ieCnpj: document.getElementById('est-ie-cnpj').value.trim(),
+                ieCep: document.getElementById('est-ie-cep').value.trim(),
+                ieEndereco: document.getElementById('est-ie-endereco').value.trim(),
+                ieBairro: document.getElementById('est-ie-bairro').value.trim(),
+                ieCidade: document.getElementById('est-ie-cidade').value.trim(),
+                ieUf: document.getElementById('est-ie-uf').value.trim().toUpperCase(),
+                ieTelefone: document.getElementById('est-ie-telefone').value.trim(),
+                ieEmail: document.getElementById('est-ie-email').value.trim(),
+                ieRepNome: document.getElementById('est-ie-rep-nome').value.trim(),
+                ieRepCargo: document.getElementById('est-ie-rep-cargo').value.trim(),
+                ieRepCpf: document.getElementById('est-ie-rep-cpf').value.trim(),
+                ieOrientador: document.getElementById('est-ie-orientador').value.trim(),
+                ieOrientadorEmail: document.getElementById('est-ie-orientador-email').value.trim(),
+                curso: document.getElementById('est-curso').value.trim(),
+                nivel: document.getElementById('est-nivel').value,
+                ra: document.getElementById('est-ra').value.trim(),
+                semestre: document.getElementById('est-semestre').value.trim(),
+                turno: document.getElementById('est-turno').value,
+                conclusao: document.getElementById('est-conclusao').value.trim(),
+                cargaCurso: document.getElementById('est-carga-curso').value.trim(),
+                situacao: document.getElementById('est-situacao').value
+            };
+
+            saveLocalOnly();
+            await pushToGoogleSheets({
+                action: 'UPSERT_REQUEST',
+                request: req,
+                history: { from: oldStatus, to: 'PRONTO_TCE', origin: 'Portal Estagiário' }
+            });
+
+            btn.disabled = false;
+            document.getElementById('form-estagiario').classList.add('hidden');
+            document.getElementById('estagiario-success-box').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        // =====================================================================
+        // PAINEL DO GESTOR, SLA, WHATSAPP E EXCLUSÃO COM SENHA
+        // =====================================================================
+        function getSlaInfo(req) {
+            if (req.status === 'CONCLUIDO' || req.status === 'DESLIGADO') {
+                return { text: 'Finalizado', overdue: false, badge: 'bg-slate-100 text-slate-600' };
+            }
+            const refDate = new Date(req.updatedAt || req.createdAt);
+            const diffHours = Math.max(0, (Date.now() - refDate.getTime()) / 3600000);
+            const overdue = diffHours > slaHours;
+            return {
+                text: `${Math.floor(diffHours)}h na etapa`,
+                overdue,
+                badge: overdue ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            };
+        }
+
+        function renderDashboard() {
+            const listEl = document.getElementById('requests-list');
+            if (!listEl) return;
+
+            const search = String(document.getElementById('filter-search')?.value || '').toLowerCase();
+            const statusFilter = document.getElementById('filter-status')?.value || 'ALL';
+            const companyFilter = document.getElementById('filter-company')?.value || 'ALL';
+
+            // KPIs
+            const total = requests.length;
+            const waiting = requests.filter(r => r.status === 'SOLICITADO' || r.status === 'LINK_ENVIADO').length;
+            const ready = requests.filter(r => r.status === 'PRONTO_TCE' || r.status === 'EM_ASSINATURA').length;
+            const done = requests.filter(r => r.status === 'CONCLUIDO').length;
+            const activeSlas = requests.filter(r => r.status !== 'CONCLUIDO' && r.status !== 'DESLIGADO');
+            const onTime = activeSlas.filter(r => !getSlaInfo(r).overdue).length;
+            const slaPct = activeSlas.length === 0 ? 100 : Math.round((onTime / activeSlas.length) * 100);
+
+            document.getElementById('kpi-total').textContent = total;
+            document.getElementById('kpi-waiting').textContent = waiting;
+            document.getElementById('kpi-ready').textContent = ready;
+            document.getElementById('kpi-done').textContent = done;
+            document.getElementById('kpi-sla').textContent = `${slaPct}%`;
+            document.getElementById('kpi-sla-sub').textContent = `Meta: ${slaHours}h por etapa`;
+
+            const filtered = requests.filter(r => {
+                const matchSearch = String(r.nomeEstagiario || '').toLowerCase().includes(search) ||
+                                    String(r.id || '').toLowerCase().includes(search) ||
+                                    String(r.companyRazaoSocial || '').toLowerCase().includes(search);
+                const matchStatus = statusFilter === 'ALL' || r.status === statusFilter;
+                const matchCompany = companyFilter === 'ALL' || r.companyRazaoSocial === companyFilter;
+                return matchSearch && matchStatus && matchCompany;
+            }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `
+                    <div class="bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center space-y-2">
+                        <p class="text-sm font-bold text-slate-700">Nenhuma solicitação encontrada</p>
+                        <p class="text-xs text-slate-500">Envie o <strong>Link Empresa</strong> para receber pedidos de contratos ou clique em <strong>Sincronizar</strong>.</p>
+                    </div>`;
+                return;
+            }
+
+            listEl.innerHTML = filtered.map(r => {
+                const st = STATUS_MAP[r.status] || STATUS_MAP.SOLICITADO;
+                const sla = getSlaInfo(r);
+                return `
+                    <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm hover:border-brand-300 transition space-y-4">
+                        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                            <div class="space-y-1">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="font-mono text-xs font-extrabold text-brand-800 bg-brand-50 px-2.5 py-0.5 rounded-lg border border-brand-200">${r.id}</span>
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${st.badge}">${st.label}</span>
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${sla.badge}">${sla.text}</span>
+                                </div>
+                                <h3 class="text-base font-extrabold text-slate-900 pt-1">${r.nomeEstagiario}</h3>
+                                <p class="text-xs text-slate-600 font-medium">${r.companyRazaoSocial} • Tel: ${r.telefoneEstagiario || '-'}</p>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2">
+                                <select onchange="changeRequestStatus('${r.id}', this.value)" class="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none">
+                                    ${Object.entries(STATUS_MAP).map(([key, val]) => `<option value="${key}" ${r.status === key ? 'selected' : ''}>${val.label}</option>`).join('')}
+                                </select>
+
+                                <button type="button" onclick="sendWhatsAppToIntern('${r.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 transition" title="Enviar link ao estagiário via WhatsApp">
+                                    <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>
+                                    <span>WhatsApp Aluno</span>
+                                </button>
+
+                                <button type="button" onclick="openFichaModal('${r.id}')" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold flex items-center gap-1.5 transition">
+                                    <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                                    <span>Ficha</span>
+                                </button>
+
+                                <button type="button" onclick="openGenerateTceModal('${r.id}')" class="px-3 py-1.5 rounded-xl bg-brand-900 hover:bg-brand-700 text-white text-xs font-semibold flex items-center gap-1.5 transition">
+                                    <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                                    <span>Gerar TCE</span>
+                                </button>
+
+                                ${r.status !== 'DESLIGADO' ? `
+                                <button type="button" onclick="openTerminateModal('${r.id}')" class="p-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition" title="Desligar / Encerrar Estágio">
+                                    <i data-lucide="user-x" class="w-4 h-4"></i>
+                                </button>` : ''}
+
+                                <button type="button" onclick="openDeleteRequestModal('${r.id}')" class="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition" title="Excluir Cadastro (Requer Senha)">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-slate-100 text-[11px] text-slate-600">
+                            <div><span class="text-slate-400">Início / Término:</span><br><strong>${formatDateBR(r.dataInicio)} a ${formatDateBR(r.dataTermino)}</strong></div>
+                            <div><span class="text-slate-400">Horário / Dias:</span><br><strong>${r.horarioTrabalho || '-'} (${r.diasSemana})</strong></div>
+                            <div><span class="text-slate-400">Bolsa / VT:</span><br><strong>R$ ${r.bolsaAuxilio} • ${r.valeTransporte || '-'}</strong></div>
+                            <div><span class="text-slate-400">Supervisor:</span><br><strong>${r.supervisorNome || '-'} (${r.supervisorCargo || '-'})</strong></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        async function changeRequestStatus(reqId, newStatus) {
+            if (newStatus === 'DESLIGADO') {
+                openTerminateModal(reqId);
+                renderDashboard();
+                return;
+            }
+            const req = requests.find(r => r.id === reqId);
+            if (!req || req.status === newStatus) return;
+
+            const oldStatus = req.status;
+            req.status = newStatus;
+            req.updatedAt = new Date().toISOString();
+            saveLocalOnly();
+            renderCurrentView();
+            showToast(`Status atualizado para ${STATUS_MAP[newStatus]?.label || newStatus}`, 'emerald');
+
+            await pushToGoogleSheets({
+                action: 'UPSERT_REQUEST',
+                request: req,
+                history: { from: oldStatus, to: newStatus, origin: 'Painel Gestor' }
+            });
+        }
+
+        async function sendWhatsAppToIntern(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            const link = getInternPortalLink(req.id);
+            if (!link) {
+                openPublicUrlModal();
+                showToast('Configure o Link Público antes de enviar o link ao estagiário.', 'amber');
+                return;
+            }
+
+            if (req.status === 'SOLICITADO') {
+                const old = req.status;
+                req.status = 'LINK_ENVIADO';
+                req.updatedAt = new Date().toISOString();
+                saveLocalOnly();
+                renderDashboard();
+                pushToGoogleSheets({
+                    action: 'UPSERT_REQUEST',
+                    request: req,
+                    history: { from: old, to: 'LINK_ENVIADO', origin: 'Envio WhatsApp' }
+                });
+            }
+
+            const phone = String(req.telefoneEstagiario || '').replace(/\D/g, '');
+            const cleanPhone = phone.startsWith('55') ? phone : `55${phone}`;
+            const msg = encodeURIComponent(
+                `Olá, ${req.nomeEstagiario}! Tudo bem?\n\n` +
+                `Recebemos a solicitação do seu contrato de estágio pela empresa *${req.companyRazaoSocial}*.\n` +
+                `Por favor, preencha sua Ficha Cadastral com seus dados pessoais e da instituição de ensino no link abaixo para emitirmos o seu Termo de Compromisso (TCE):\n\n` +
+                `${link}`
+            );
+            window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
+        }
+
+        // =====================================================================
+        // EXCLUSÃO DE CADASTRO COM SENHA (97381033)
+        // =====================================================================
+        function openDeleteRequestModal(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            document.getElementById('delete-req-id').value = req.id;
+            document.getElementById('delete-password-input').value = '';
+            document.getElementById('delete-student-info').innerHTML =
+                `Você está prestes a excluir permanentemente o cadastro de <strong>${req.nomeEstagiario}</strong> (Protocolo <strong>${req.id}</strong> • ${req.companyRazaoSocial}).`;
+            document.getElementById('modal-delete-confirm').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        async function confirmDeleteRequest(e) {
+            e.preventDefault();
+            const pass = document.getElementById('delete-password-input').value.trim();
+            if (pass !== '97381033') {
+                showToast('Senha incorreta! A exclusão foi bloqueada.', 'rose');
+                return;
+            }
+
+            const reqId = document.getElementById('delete-req-id').value;
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+
+            requests = requests.filter(r => r.id !== reqId);
+            saveLocalOnly();
+            closeModal('modal-delete-confirm');
+            renderCurrentView();
+            showToast(`Cadastro de ${req.nomeEstagiario} excluído com sucesso.`, 'emerald');
+
+            await pushToGoogleSheets({
+                action: 'DELETE_REQUEST',
+                id: req.id,
+                nomeEstagiario: req.nomeEstagiario,
+                companyRazaoSocial: req.companyRazaoSocial
+            });
+        }
+
+        // =====================================================================
+        // BASE DE ESTAGIÁRIOS & VIGÊNCIA
+        // =====================================================================
+        function getContractLifecycleStatus(req) {
+            if (req.status === 'DESLIGADO') {
+                return { code: 'ENCERRADO', label: `Desligado em ${formatDateBR(req.dataDesligamento)}`, badge: 'bg-rose-50 text-rose-700 border-rose-200' };
+            }
+            if (req.status !== 'CONCLUIDO') {
+                return { code: 'FORMALIZACAO', label: STATUS_MAP[req.status]?.label || 'Em Formalização', badge: 'bg-blue-50 text-blue-700 border-blue-200' };
+            }
+            if (!req.dataTermino) {
+                return { code: 'ATIVO', label: 'Ativo (Sem término definido)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+            }
+            const end = new Date(req.dataTermino + 'T23:59:59');
+            const now = new Date();
+            const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+
+            if (diffDays < 0) {
+                return { code: 'ENCERRADO', label: `Vencido há ${Math.abs(diffDays)} dia(s)`, badge: 'bg-rose-50 text-rose-700 border-rose-200' };
+            }
+            if (diffDays <= 30) {
+                return { code: 'VENCENDO', label: `Vence em ${diffDays} dia(s)`, badge: 'bg-amber-50 text-amber-800 border-amber-200' };
+            }
+            return { code: 'ATIVO', label: `Ativo (${diffDays} dias restantes)`, badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+        }
+
+        function setEstListFilter(code) {
+            const sel = document.getElementById('est-list-status');
+            if (sel) sel.value = code;
+            renderEstagiariosBase();
+        }
+
+        function renderEstagiariosBase() {
+            const container = document.getElementById('estagiarios-base-list');
+            if (!container) return;
+
+            const search = String(document.getElementById('est-list-search')?.value || '').toLowerCase();
+            const statusFilter = document.getElementById('est-list-status')?.value || 'ALL';
+            const compFilter = document.getElementById('est-list-company')?.value || 'ALL';
+
+            let ativos = 0, vencendo = 0, encerrados = 0, formalizacao = 0;
+            requests.forEach(r => {
+                const lc = getContractLifecycleStatus(r);
+                if (lc.code === 'ATIVO') ativos++;
+                if (lc.code === 'VENCENDO') vencendo++;
+                if (lc.code === 'ENCERRADO') encerrados++;
+                if (lc.code === 'FORMALIZACAO') formalizacao++;
+            });
+
+            document.getElementById('est-kpi-ativos').textContent = ativos;
+            document.getElementById('est-kpi-vencendo').textContent = vencendo;
+            document.getElementById('est-kpi-encerrados').textContent = encerrados;
+            document.getElementById('est-kpi-formalizacao').textContent = formalizacao;
+
+            const filtered = requests.filter(r => {
+                const lc = getContractLifecycleStatus(r);
+                const d = r.internData || {};
+                const matchSearch = String(r.nomeEstagiario || '').toLowerCase().includes(search) ||
+                                    String(d.cpf || '').toLowerCase().includes(search) ||
+                                    String(d.curso || '').toLowerCase().includes(search) ||
+                                    String(r.id || '').toLowerCase().includes(search);
+                const matchStatus = statusFilter === 'ALL' || lc.code === statusFilter;
+                const matchComp = compFilter === 'ALL' || r.companyRazaoSocial === compFilter;
+                return matchSearch && matchStatus && matchComp;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="col-span-full bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center text-xs text-slate-500">Nenhum estagiário encontrado neste filtro.</div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(r => {
+                const lc = getContractLifecycleStatus(r);
+                const d = r.internData || {};
+                return `
+                    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between gap-3">
+                        <div class="space-y-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <span class="font-mono text-[11px] font-bold text-brand-700">${r.id}</span>
+                                    <h3 class="text-sm font-extrabold text-slate-900">${r.nomeEstagiario}</h3>
+                                    <p class="text-xs text-slate-500">${r.companyRazaoSocial}</p>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-full text-[11px] font-bold border ${lc.badge} shrink-0">${lc.label}</span>
+                            </div>
+                            <div class="text-xs text-slate-600 grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-100">
+                                <p><strong>CPF:</strong> ${d.cpf || 'Pendente'}</p>
+                                <p><strong>Curso:</strong> ${d.curso || 'Pendente'}</p>
+                                <p><strong>Instituição:</strong> ${d.ieNome || 'Pendente'}</p>
+                                <p><strong>Vigência:</strong> ${formatDateBR(r.dataInicio)} a ${formatDateBR(r.dataTermino)}</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button type="button" onclick="openFichaModal('${r.id}')" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold">Ficha</button>
+                            <button type="button" onclick="openGenerateTceModal('${r.id}')" class="px-3 py-1.5 rounded-xl bg-brand-900 hover:bg-brand-700 text-white text-xs font-semibold">Minuta TCE</button>
+                            ${r.status !== 'DESLIGADO' ? `<button type="button" onclick="openTerminateModal('${r.id}')" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold">Desligar</button>` : ''}
+                            <button type="button" onclick="openDeleteRequestModal('${r.id}')" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold">Excluir</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        // =====================================================================
+        // CONTROLE FINANCEIRO (PARCELAS POR DURAÇÃO + DESLIGAMENTO)
+        // =====================================================================
+        function getContractInstallmentSchedule(req) {
+            const startStr = req.dataInicio || req.createdAt.slice(0, 10);
+            const start = new Date(startStr + 'T00:00:00');
+            let totalMonths = 12;
+
+            if (req.dataInicio && req.dataTermino) {
+                const end = new Date(req.dataTermino + 'T00:00:00');
+                const diff = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+                totalMonths = Math.max(1, diff);
+            } else if (String(req.vigencia).includes('6')) {
+                totalMonths = 6;
+            } else if (String(req.vigencia).includes('24') || String(req.vigencia).includes('2')) {
+                totalMonths = 24;
+            }
+
+            const termMonthKey = (req.status === 'DESLIGADO' && req.dataDesligamento) ? req.dataDesligamento.slice(0, 7) : null;
+            const list = [];
+
+            for (let i = 0; i < totalMonths; i++) {
+                const dt = new Date(start.getFullYear(), start.getMonth() + i, 1);
+                const yyyy = dt.getFullYear();
+                const mm = String(dt.getMonth() + 1).padStart(2, '0');
+                const key = `${yyyy}-${mm}`;
+                const instState = (req.installments && req.installments[key]) || {};
+                const cancelled = termMonthKey ? (key > termMonthKey && !instState.paid) : false;
+
+                list.push({
+                    number: i + 1,
+                    total: totalMonths,
+                    key,
+                    label: `${mm}/${yyyy}`,
+                    paid: Boolean(instState.paid),
+                    paidAt: instState.paidAt || '',
+                    cancelled
+                });
+            }
+            return list;
+        }
+
+        function changeFinanceMonth(delta) {
+            const input = document.getElementById('fin-filter-month');
+            if (!input || !input.value) return;
+            const [y, m] = input.value.split('-').map(Number);
+            const dt = new Date(y, m - 1 + delta, 1);
+            input.value = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+            renderFinanceiro();
+        }
+
+        function renderFinanceiro() {
+            const monthInput = document.getElementById('fin-filter-month');
+            if (!monthInput.value) {
+                const now = new Date();
+                monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            }
+            const selectedMonth = monthInput.value;
+            const statusFilter = document.getElementById('fin-filter-status')?.value || 'ALL';
+
+            let initPaid = 0, initPending = 0, monthPaid = 0, monthTotal = 0, monthPending = 0, pendingCount = 0, activeContracts = 0;
+
+            requests.forEach(r => {
+                if (r.status !== 'DESLIGADO') activeContracts++;
+                if (r.initialFeePaid) initPaid += Number(r.initialFee || 0);
+                else initPending += Number(r.initialFee || 0);
+
+                const schedule = getContractInstallmentSchedule(r);
+                const curInst = schedule.find(s => s.key === selectedMonth && !s.cancelled);
+                if (curInst) {
+                    const fee = Number(r.monthlyFee || 0);
+                    monthTotal += fee;
+                    if (curInst.paid) monthPaid += fee;
+                    else {
+                        monthPending += fee;
+                        pendingCount++;
+                    }
+                }
+            });
+
+            document.getElementById('fin-kpi-initial-paid').textContent = formatBRL(initPaid);
+            document.getElementById('fin-kpi-initial-pending').textContent = `${formatBRL(initPending)} pendente`;
+            document.getElementById('fin-kpi-monthly-paid').textContent = formatBRL(monthPaid);
+            document.getElementById('fin-kpi-monthly-total').textContent = `de ${formatBRL(monthTotal)} previsto no mês`;
+            document.getElementById('fin-kpi-monthly-pending').textContent = formatBRL(monthPending);
+            document.getElementById('fin-kpi-pending-count').textContent = `${pendingCount} fatura(s) em aberto`;
+            document.getElementById('fin-kpi-active-contracts').textContent = activeContracts;
+
+            const container = document.getElementById('financeiro-list');
+            const filtered = requests.filter(r => {
+                const schedule = getContractInstallmentSchedule(r);
+                const curInst = schedule.find(s => s.key === selectedMonth && !s.cancelled);
+                if (statusFilter === 'ATIVOS') return r.status !== 'DESLIGADO';
+                if (statusFilter === 'DESLIGADOS') return r.status === 'DESLIGADO';
+                if (statusFilter === 'PENDENTE') return (!r.initialFeePaid) || (curInst && !curInst.paid);
+                if (statusFilter === 'PAGO') return r.initialFeePaid && (!curInst || curInst.paid);
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center text-xs text-slate-500">Nenhum contrato encontrado para este filtro financeiro.</div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(r => {
+                const schedule = getContractInstallmentSchedule(r);
+                const paidCount = schedule.filter(s => s.paid).length;
+                return `
+                    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-mono text-xs font-bold text-brand-700">${r.id}</span>
+                                    <span class="text-xs font-extrabold text-slate-900">${r.nomeEstagiario}</span>
+                                    ${r.status === 'DESLIGADO' ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">Desligado em ${formatDateBR(r.dataDesligamento)}</span>` : ''}
+                                </div>
+                                <p class="text-xs text-slate-500 mt-0.5">${r.companyRazaoSocial} • Mensalidade: <strong>${formatBRL(r.monthlyFee)}</strong> • Parcelas pagas: <strong>${paidCount}/${schedule.length}</strong></p>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" onclick="toggleInitialFeePayment('${r.id}')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition ${r.initialFeePaid ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'}">
+                                    Taxa Inicial (${formatBRL(r.initialFee)}): ${r.initialFeePaid ? 'PAGA ✓' : 'PENDENTE (Baixar)'}
+                                </button>
+                                ${r.status !== 'DESLIGADO' ? `
+                                <button type="button" onclick="openTerminateModal('${r.id}')" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold">
+                                    Desligar Estagiário
+                                </button>` : ''}
+                            </div>
+                        </div>
+
+                        <div>
+                            <p class="text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-2">Carnê de Mensalidades (Clique na parcela para baixar ou estornar)</p>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                                ${schedule.map(inst => {
+                                    if (inst.cancelled) {
+                                        return `<div class="p-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-400 text-[11px] opacity-60">
+                                            <div class="font-bold">${inst.number}/${inst.total} • ${inst.label}</div>
+                                            <div>Cancelada</div>
+                                        </div>`;
+                                    }
+                                    const isSelected = inst.key === selectedMonth;
+                                    return `<button type="button" onclick="toggleInstallmentPayment('${r.id}', '${inst.key}')" class="text-left p-2 rounded-xl border text-[11px] transition ${inst.paid ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-white border-slate-300 hover:border-brand-500 text-slate-700'} ${isSelected ? 'ring-2 ring-brand-500' : ''}">
+                                        <div class="font-extrabold">${inst.number}/${inst.total} • ${inst.label}</div>
+                                        <div class="font-semibold mt-0.5">${inst.paid ? 'Pago ✓' : 'Em aberto'}</div>
+                                    </button>`;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        async function toggleInitialFeePayment(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            req.initialFeePaid = !req.initialFeePaid;
+            req.initialFeePaidAt = req.initialFeePaid ? new Date().toISOString() : '';
+            req.updatedAt = new Date().toISOString();
+            saveLocalOnly();
+            renderFinanceiro();
+            showToast(req.initialFeePaid ? 'Taxa inicial baixada como PAGA!' : 'Taxa inicial estornada para PENDENTE.', 'emerald');
+            await pushToGoogleSheets({
+                action: 'UPSERT_REQUEST',
+                request: req,
+                history: { from: 'Financeiro', to: req.initialFeePaid ? 'Taxa Inicial Paga' : 'Taxa Inicial Estornada', origin: 'Controle Financeiro' }
+            });
+        }
+
+        async function toggleInstallmentPayment(reqId, monthKey) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            if (!req.installments) req.installments = {};
+            const current = req.installments[monthKey] || { paid: false };
+            const nextPaid = !current.paid;
+            req.installments[monthKey] = {
+                paid: nextPaid,
+                paidAt: nextPaid ? new Date().toISOString() : ''
+            };
+            req.updatedAt = new Date().toISOString();
+            saveLocalOnly();
+            renderFinanceiro();
+            showToast(nextPaid ? `Parcela ${monthKey} marcada como PAGA!` : `Parcela ${monthKey} estornada.`, 'emerald');
+            await pushToGoogleSheets({
+                action: 'UPSERT_REQUEST',
+                request: req,
+                history: { from: 'Financeiro', to: `Parcela ${monthKey}: ${nextPaid ? 'PAGA' : 'ABERTA'}`, origin: 'Controle Financeiro' }
+            });
+        }
+
+        // =====================================================================
+        // DESLIGAMENTO DO ESTAGIÁRIO
+        // =====================================================================
+        function openTerminateModal(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            document.getElementById('term-req-id').value = req.id;
+            document.getElementById('term-date').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('term-student-info').innerHTML = `Encerrar estágio de <strong>${req.nomeEstagiario}</strong> na empresa <strong>${req.companyRazaoSocial}</strong>.`;
+            document.getElementById('modal-terminate').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        async function confirmTermination(e) {
+            e.preventDefault();
+            const reqId = document.getElementById('term-req-id').value;
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+
+            const oldStatus = req.status;
+            req.status = 'DESLIGADO';
+            req.dataDesligamento = document.getElementById('term-date').value;
+            req.motivoDesligamento = document.getElementById('term-reason').value;
+            req.updatedAt = new Date().toISOString();
+
+            saveLocalOnly();
+            closeModal('modal-terminate');
+            renderCurrentView();
+            showToast('Desligamento registrado e parcelas futuras canceladas.', 'amber');
+
+            await pushToGoogleSheets({
+                action: 'UPSERT_REQUEST',
+                request: req,
+                history: { from: oldStatus, to: `DESLIGADO (${req.dataDesligamento})`, origin: 'Desligamento' }
+            });
+        }
+
+        // =====================================================================
+        // FICHA CONSOLIDADA E GERADOR OFICIAL DO TCE (CLÁUSULAS I A XI)
+        // =====================================================================
+        function openFichaModal(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            const d = req.internData || {};
+            const isMenor = d.menor18 === 'Sim' && d.respNome;
+
+            const textSummary = [
+                `PROTOCOLO: ${req.id}`,
+                `EMPRESA: ${req.companyRazaoSocial}`,
+                `SUPERVISOR: ${req.supervisorNome} (${req.supervisorCargo})`,
+                `ESTAGIÁRIO: ${req.nomeEstagiario} | CPF: ${d.cpf || '-'} | RG: ${d.rg || '-'} (${d.rgOrgao || '-'})`,
+                isMenor ? `RESPONSÁVEL LEGAL: ${d.respNome} (${d.respParentesco || 'Resp.'}) | CPF: ${d.respCpf || '-'} | Tel: ${d.respTelefone || '-'}` : '',
+                `ENDEREÇO: ${d.rua || '-'}, ${d.numero || '-'} - ${d.bairro || '-'}, ${d.cidade || '-'}/${d.uf || '-'} - CEP ${d.cep || '-'}`,
+                `INSTITUIÇÃO: ${d.ieNome || '-'} | CNPJ: ${d.ieCnpj || '-'} | Curso: ${d.curso || '-'} (${d.semestre || '-'})`,
+                `VIGÊNCIA: ${formatDateBR(req.dataInicio)} a ${formatDateBR(req.dataTermino)} | Horário: ${req.horarioTrabalho} (${req.diasSemana})`,
+                `BOLSA: R$ ${req.bolsaAuxilio} | VT: ${req.valeTransporte} | Outros: ${req.outrosBeneficios}`,
+                `ATIVIDADES: ${req.planoAtividades}`
+            ].filter(Boolean).join('\n');
+
+            document.getElementById('ficha-tce-content').innerHTML = `
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 whitespace-pre-line font-mono text-[11px] text-slate-800">${textSummary}</div>
+            `;
+            document.getElementById('btn-ficha-copy').onclick = () => copyToClipboard(textSummary, 'Dados da Ficha copiados!');
+            document.getElementById('btn-ficha-open-tce').onclick = () => {
+                closeModal('modal-ficha-tce');
+                openGenerateTceModal(req.id);
+            };
+            document.getElementById('modal-ficha-tce').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function openGenerateTceModal(reqId) {
+            const req = requests.find(r => r.id === reqId);
+            if (!req) return;
+            const comp = companies.find(c => c.id === req.companyId || c.razaoSocial === req.companyRazaoSocial) || {};
+            const d = req.internData || {};
+
+            const formatExtenso = (isoDate) => {
+                if (!isoDate) return '-';
+                const parts = String(isoDate).slice(0, 10).split('-');
+                if (parts.length !== 3) return isoDate;
+                const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+                return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+            };
+
+            const hojeExtenso = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+            const inicioExtenso = formatExtenso(req.dataInicio);
+            const terminoExtenso = formatExtenso(req.dataTermino);
+            const isMenor = d.menor18 === 'Sim' && Boolean(d.respNome && d.respNome.trim());
+
+            document.getElementById('tce-print-document').innerHTML = `
+                <div class="text-center pb-2">
+                    <h1 class="text-sm font-extrabold uppercase tracking-wide text-slate-900">CONDIÇÕES GERAIS DE COOPERAÇÃO E TERMO DE COMPROMISSO DE ESTÁGIO</h1>
+                    <p class="text-[11px] text-slate-700 mt-1 text-justify">
+                        Em consonância com a Lei Federal nº 11.788, de 30 de agosto de 2008, este Termo de Compromisso de Estágio é celebrado entre as partes a seguir nomeadas:
+                    </p>
+                </div>
+
+                <!-- Tabela 1: UNIDADE CONCEDENTE -->
+                <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                    <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">UNIDADE CONCEDENTE</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Razão Social</td><td class="border border-slate-400 p-1.5">${comp.razaoSocial || req.companyRazaoSocial}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CNPJ</td><td class="border border-slate-400 p-1.5">${comp.cnpj || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Endereço</td><td class="border border-slate-400 p-1.5">${comp.endereco || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Bairro</td><td class="border border-slate-400 p-1.5">${comp.bairro || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cidade | UF</td><td class="border border-slate-400 p-1.5">${comp.cidade || '-'} / ${comp.uf || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CEP</td><td class="border border-slate-400 p-1.5">${comp.cep || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Telefone</td><td class="border border-slate-400 p-1.5">${comp.telefone || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">E-mail</td><td class="border border-slate-400 p-1.5">${comp.email || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Nome do Supervisor de Estágio</td><td class="border border-slate-400 p-1.5">${req.supervisorNome || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cargo do Supervisor de Estágio</td><td class="border border-slate-400 p-1.5">${req.supervisorCargo || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Nome do Representante</td><td class="border border-slate-400 p-1.5">${comp.repNome || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cargo do Representante</td><td class="border border-slate-400 p-1.5">${comp.repCargo || '-'}</td></tr>
+                </table>
+
+                <!-- Tabela 2: INSTITUIÇÃO DE ENSINO -->
+                <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                    <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">INSTITUIÇÃO DE ENSINO</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Nome</td><td class="border border-slate-400 p-1.5">${d.ieNome || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CNPJ</td><td class="border border-slate-400 p-1.5">${d.ieCnpj || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Endereço</td><td class="border border-slate-400 p-1.5">${d.ieEndereco || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Bairro</td><td class="border border-slate-400 p-1.5">${d.ieBairro || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cidade | UF</td><td class="border border-slate-400 p-1.5">${d.ieCidade || '-'} / ${d.ieUf || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CEP</td><td class="border border-slate-400 p-1.5">${d.ieCep || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Telefone</td><td class="border border-slate-400 p-1.5">${d.ieTelefone || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">E-mail</td><td class="border border-slate-400 p-1.5">${d.ieEmail || '-'}</td></tr>
+                </table>
+
+                <!-- Tabela 3: ESTAGIÁRIO -->
+                <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                    <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">ESTAGIÁRIO</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Nome</td><td class="border border-slate-400 p-1.5">${req.nomeEstagiario}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CPF</td><td class="border border-slate-400 p-1.5">${d.cpf || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Endereço</td><td class="border border-slate-400 p-1.5">${d.rua || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Número</td><td class="border border-slate-400 p-1.5">${d.numero || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Bairro</td><td class="border border-slate-400 p-1.5">${d.bairro || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Cidade | UF</td><td class="border border-slate-400 p-1.5">${d.cidade || '-'} / ${d.uf || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">CEP</td><td class="border border-slate-400 p-1.5">${d.cep || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Telefone</td><td class="border border-slate-400 p-1.5">${req.telefoneEstagiario || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">E-mail</td><td class="border border-slate-400 p-1.5">${d.email || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Nome do Curso</td><td class="border border-slate-400 p-1.5">${d.curso || '-'}</td></tr>
+                    <tr><td class="border border-slate-400 p-1.5 font-semibold">Série | Período</td><td class="border border-slate-400 p-1.5">${d.semestre || '-'}</td></tr>
+                    ${isMenor ? `<tr><td class="border border-slate-400 p-1.5 font-semibold">Responsável Legal (Menor 18 anos)</td><td class="border border-slate-400 p-1.5">${d.respNome} (${d.respParentesco || 'Responsável'}) • CPF: ${d.respCpf || '-'}</td></tr>` : ''}
+                </table>
+
+                <p class="text-[11px] text-justify">
+                    As partes acima identificadas têm, entre si, justo e acertado o presente Termo de Compromisso de Estágio, que se regerá pelas seguintes cláusulas e condições:
+                </p>
+
+                <!-- Cláusula I -->
+                <div class="tce-clause-block space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula I.</p>
+                    <p>O Estágio de que trata o presente Termo de Compromisso tem por objetivo propiciar ao Estagiário treinamento prático, aperfeiçoamento técnico, cultural, científico e de relacionamento humano, como complementação da sua formação profissional em ambiente de trabalho, cujas atividades devem ser compatíveis com o curso ao qual se refere, não gerando vínculo empregatício.</p>
+                </div>
+
+                <!-- Cláusula II -->
+                <div class="tce-clause-block space-y-1.5 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula II.</p>
+                    <p>A vigência do presente Termo de Compromisso de Estágio se estabelece pelo período de realização do Estágio conforme abaixo especificado, podendo este ser renovado.</p>
+                    <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                        <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">PERÍODO DE REALIZAÇÃO DO ESTÁGIO</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Início do Estágio</td><td class="border border-slate-400 p-1.5">${inicioExtenso}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Término do Estágio</td><td class="border border-slate-400 p-1.5">${terminoExtenso}</td></tr>
+                    </table>
+                </div>
+
+                <!-- Cláusula III -->
+                <div class="tce-clause-block space-y-1.5 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula III.</p>
+                    <p>Unidade Concedente se compromete a contratar, em favor do Estagiário, Seguro Contra Acidentes Pessoais, como proteção de sua integridade física no local de Estágio, ficando sua manutenção sob sua responsabilidade durante o período de realização do Estágio, sendo proporcionado pela Apólice abaixo especificada.</p>
+                    <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                        <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">APÓLICE DE SEGURO DO ESTAGIÁRIO</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Nome da Seguradora</td><td class="border border-slate-400 p-1.5">${insuranceConfig.seguradora}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Número da Apólice de Seguro</td><td class="border border-slate-400 p-1.5">${insuranceConfig.apolice}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Período de Vigência</td><td class="border border-slate-400 p-1.5">${insuranceConfig.vigencia}</td></tr>
+                    </table>
+                </div>
+
+                <!-- Cláusula IV (Jornada) -->
+                <div class="tce-clause-block space-y-1.5 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula IV.</p>
+                    <p>A jornada de trabalho de Estágio deverá ser cumprida pelo Estagiário conforme especificado:</p>
+                    <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                        <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">JORNADA DE TRABALHO</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Carga Horária Total</td><td class="border border-slate-400 p-1.5">${req.jornadaSemanal} semanais</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Carga Horária Diária</td><td class="border border-slate-400 p-1.5">${req.jornadaDiaria}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Dia(s) da Semana: Horário de Entrada/Intervalo/Saída</td><td class="border border-slate-400 p-1.5">${req.diasSemana}: Horário: ${req.horarioTrabalho} / Intervalo: ${req.intervalo}</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold">Setor(es) de Atuação</td><td class="border border-slate-400 p-1.5">${req.setorAtuacao || '-'}</td></tr>
+                    </table>
+                </div>
+
+                <!-- Cláusula V (Bolsa) -->
+                <div class="tce-clause-block space-y-1.5 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula V.</p>
+                    <p>O valor da bolsa de complementação educacional deverá ser pago pela Unidade Concedente mensalmente conforme o valor abaixo especificado:</p>
+                    <table class="w-full border-collapse border border-slate-500 text-[11px]">
+                        <tr class="bg-slate-900 text-white font-bold"><td colspan="2" class="p-1.5 uppercase">VALOR DA BOLSA DE COMPLEMENTAÇÃO EDUCACIONAL</td></tr>
+                        <tr><td class="border border-slate-400 p-1.5 font-semibold w-2/5">Valor</td><td class="border border-slate-400 p-1.5">R$ ${req.bolsaAuxilio} ${req.valeTransporte ? `• Auxílio-Transporte: ${req.valeTransporte}` : ''} ${req.outrosBeneficios && req.outrosBeneficios !== 'Nenhum' ? `• Outros: ${req.outrosBeneficios}` : ''}</td></tr>
+                    </table>
+                    ${req.planoAtividades ? `<p class="pt-1"><strong>Plano de Atividades (Art. 7º, I):</strong> ${req.planoAtividades}</p>` : ''}
+                </div>
+
+                <!-- Cláusula VI -->
+                <div class="tce-clause-block space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula VI.</p>
+                    <p>São competências da Unidade Concedente:</p>
+                    <ul class="list-disc pl-5 space-y-0.5">
+                        <li>Celebrar Termo de Compromisso de Estágio, zelando por seu cumprimento;</li>
+                        <li>Ofertar instalações que proporcionem condições adequadas para o desenvolvimento das atividades do estagiário;</li>
+                        <li>Indicar para exercer a função de Supervisor de Estágio, funcionário de seu quadro de pessoal com formação ou experiência profissional na área de conhecimento desenvolvida no Curso do Estagiário;</li>
+                        <li>Contratar em favor do Estagiário seguro contra acidentes pessoais, cuja apólice seja compatível com valores de mercado, conforme estabelecido no TCE;</li>
+                    </ul>
+                </div>
+
+                <!-- Cláusula VII -->
+                <div class="tce-clause-block space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula VII.</p>
+                    <p>São competências do estagiário:</p>
+                    <ul class="list-disc pl-5 space-y-0.5">
+                        <li>Cumprir os deveres estabelecidos no TCE e as normas estabelecidas neste Regulamento;</li>
+                        <li>Desenvolver as atividades de estágio com responsabilidade, apresentando zelo na sua execução;</li>
+                        <li>Zelar pelos equipamentos e bens da Unidade Concedente, assim como respeitar os seus funcionários, regulamentos e normas;</li>
+                        <li>Não divulgar informações confidenciais acessadas ou recebidas no decorrer da realização das atividades de estágio, observando o sigilo profissional;</li>
+                        <li>Participar das reuniões e atividades estipuladas referentes ao Estágio;</li>
+                        <li>Elaborar, com periodicidade mínima de 06 (seis) meses, Relatório de Atividades, conforme especificado no Art. 7º da Lei 11.788, de 25 de setembro de 2008, que dispõe sobre o Estágio de estudantes e encaminhar para o Professor Orientador;</li>
+                    </ul>
+                </div>
+
+                <!-- Cláusula VIII -->
+                <div class="tce-clause-block space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula VIII.</p>
+                    <p>Constitui motivo para cancelamento do presente TCE:</p>
+                    <ul class="list-disc pl-5 space-y-0.5">
+                        <li>O descumprimento de cláusula ou condição presente no mesmo;</li>
+                        <li>O aluno que desista do curso, caracterizando abandono de suas atividades escolares ou efetue trancamento da matrícula.</li>
+                        <li>Por desejo de qualquer uma das partes, sem qualquer ônus, devendo ser comunicado com antecedência mínima de 07 (sete) dias.</li>
+                    </ul>
+                </div>
+
+                <!-- Cláusula IX -->
+                <div class="tce-clause-block space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula IX.</p>
+                    <p>As partes autorizam a Agência Nacional do Primeiro Emprego a atuar como Agente de Integração, realizando o acompanhamento administrativo do estágio, nos termos do Art. 5º da Lei nº 11.788/2008, sem que isso implique obrigações subsidiárias ou solidárias para a Instituição de Ensino ou para o estudante.</p>
+                </div>
+
+                <!-- Cláusula X -->
+                <div class="tce-clause-block space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula X.</p>
+                    <p>Fica eleito o Foro da Comarca de Mauá, para dirimir quaisquer dúvidas ou litígios oriundos deste Termo, com renúncia a qualquer outro, por mais privilegiado que seja.</p>
+                </div>
+
+                <!-- Cláusula XI -->
+                <div class="tce-clause-block space-y-1 text-[11px] text-justify">
+                    <p class="font-bold">Cláusula XI.</p>
+                    <p>Qualquer alteração cabível das informações contidas neste Termo de Compromisso de Estágio, deverá ser implementada por meio de Termo Aditivo de Compromisso de Estágio (TACE).</p>
+                </div>
+
+                <div class="tce-clause-block space-y-4">
+                    <p class="text-[11px] pt-2">
+                        E, por estarem de comum acordo com as condições acima, firmam o presente compromisso em 03 (três) vias de igual teor e forma.
+                    </p>
+
+                    <div class="pt-1 text-[11px] font-medium">
+                        ${comp.cidade || 'Mauá'}, ${hojeExtenso}
+                    </div>
+
+                    <!-- Assinaturas -->
+                    <div class="grid grid-cols-2 gap-8 pt-10 text-center text-[11px]">
+                        <div class="border-t border-slate-900 pt-1.5">
+                            <strong>${d.ieRepNome || 'Representante da Instituição de Ensino'}</strong><br>
+                            ${d.ieRepCargo || 'Diretor(a)'}<br>
+                            ${d.ieNome || 'Instituição de Ensino'}
+                        </div>
+                        <div class="border-t border-slate-900 pt-1.5">
+                            <strong>${comp.repNome || 'Representante da Unidade Concedente'}</strong><br>
+                            ${comp.repCargo || 'Representante Legal'}<br>
+                            Unidade Concedente
+                        </div>
+                        ${isMenor ? `
+                        <div class="border-t border-slate-900 pt-1.5">
+                            <strong>${d.respNome}</strong><br>
+                            ${d.respParentesco || 'Responsável Legal'} (CPF: ${d.respCpf || '-'})
+                        </div>
+                        <div class="border-t border-slate-900 pt-1.5">
+                            <strong>${req.nomeEstagiario}</strong><br>
+                            Estagiário(a)
+                        </div>` : `
+                        <div class="col-span-2 max-w-xs mx-auto w-full border-t border-slate-900 pt-1.5 mt-4">
+                            <strong>${req.nomeEstagiario}</strong><br>
+                            Estagiário(a)
+                        </div>`}
+                    </div>
+                </div>
+            `;
+            document.getElementById('modal-tce-generator').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        // =====================================================================
+        // MODAIS DE CONFIGURAÇÃO & EXPORTAÇÃO CSV
+        // =====================================================================
+        function openPublicUrlModal() {
+            document.getElementById('input-public-base-url').value = publicBaseUrl || (window.location.protocol.startsWith('http') ? window.location.origin + window.location.pathname : '');
+            document.getElementById('modal-public-url').classList.remove('hidden');
+        }
+
+        function savePublicBaseUrl() {
+            const val = document.getElementById('input-public-base-url').value.trim();
+            if (!val.startsWith('http')) {
+                showToast('Informe uma URL válida começando com https://', 'rose');
+                return;
+            }
+            publicBaseUrl = val;
+            saveLocalOnly();
+            closeModal('modal-public-url');
+            document.getElementById('local-file-banner').classList.add('hidden');
+            showToast('Link Público salvo! Todos os links copiados usarão este endereço.', 'emerald');
+        }
+
+        function openSheetsModal() {
+            document.getElementById('sheets-webhook-input').value = webhookUrl;
+            document.getElementById('apps-script-code').textContent = APPS_SCRIPT_TEMPLATE;
+            document.getElementById('modal-sheets').classList.remove('hidden');
+        }
+
+        function saveSheetsWebhook() {
+            webhookUrl = document.getElementById('sheets-webhook-input').value.trim();
+            saveLocalOnly();
+            updateSheetsStatusIndicator();
+            closeModal('modal-sheets');
+            if (webhookUrl) syncFromGoogleSheets(true);
+            else showToast('Integração desconectada.', 'amber');
+        }
+
+        function copyAppsScriptCode() {
+            copyToClipboard(APPS_SCRIPT_TEMPLATE, 'Código Code.gs copiado!');
+        }
+
+        function openInsuranceModal() {
+            document.getElementById('ins-seguradora').value = insuranceConfig.seguradora || '';
+            document.getElementById('ins-apolice').value = insuranceConfig.apolice || '';
+            document.getElementById('ins-vigencia').value = insuranceConfig.vigencia || '';
+            document.getElementById('modal-insurance').classList.remove('hidden');
+        }
+
+        function saveInsuranceConfig() {
+            insuranceConfig = {
+                seguradora: document.getElementById('ins-seguradora').value.trim() || 'Porto Seguro',
+                apolice: document.getElementById('ins-apolice').value.trim() || '1139573',
+                vigencia: document.getElementById('ins-vigencia').value.trim() || '18/11/2026 à 18/11/2027'
+            };
+            saveLocalOnly();
+            closeModal('modal-insurance');
+            showToast('Dados da apólice atualizados!', 'emerald');
+        }
+
+        function openSlaModal() {
+            document.getElementById('sla-hours-input').value = slaHours;
+            document.getElementById('modal-sla').classList.remove('hidden');
+        }
+
+        function saveSlaConfig() {
+            slaHours = Math.max(1, Number(document.getElementById('sla-hours-input').value || 24));
+            saveLocalOnly();
+            closeModal('modal-sla');
+            renderDashboard();
+            showToast(`Meta de SLA definida para ${slaHours}h.`, 'emerald');
+        }
+
+        function exportCSV() {
+            const headers = ['Protocolo', 'Status', 'Empresa', 'Estagiario', 'Telefone', 'Inicio', 'Termino', 'Bolsa', 'Supervisor', 'Cargo_Supervisor', 'Curso', 'Instituicao'];
+            const rows = requests.map(r => {
+                const d = r.internData || {};
+                return [r.id, r.status, r.companyRazaoSocial, r.nomeEstagiario, r.telefoneEstagiario, r.dataInicio, r.dataTermino, r.bolsaAuxilio, r.supervisorNome, r.supervisorCargo, d.curso || '', d.ieNome || '']
+                    .map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(';');
+            });
+            const csv = '\uFEFF' + [headers.join(';'), ...rows].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `estagioflow_contratos_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+        }
+
+        // =====================================================================
+        // INICIALIZAÇÃO DO SISTEMA
+        // =====================================================================
+        window.addEventListener('DOMContentLoaded', () => {
+            loadState();
+            updateSheetsStatusIndicator();
+            refreshAllSelects();
+
+            if (window.location.protocol === 'file:' && !publicBaseUrl) {
+                document.getElementById('local-file-banner').classList.remove('hidden');
+            }
+
+            const params = new URLSearchParams(window.location.search);
+            const viewParam = params.get('view');
+            const reqIdParam = params.get('id');
+
+            if (viewParam === 'empresa') {
+                switchView('empresa');
+                if (webhookUrl) syncFromGoogleSheets(false, () => refreshAllSelects());
+            } else if (viewParam === 'estagiario' && reqIdParam) {
+                switchView('estagiario');
+                loadInternView(reqIdParam);
+                if (webhookUrl) syncFromGoogleSheets(false, () => loadInternView(reqIdParam));
+            } else {
+                switchView('gestor');
+                if (webhookUrl) {
+                    syncFromGoogleSheets(false);
+                    setInterval(() => {
+                        if (!document.hidden) syncFromGoogleSheets(false);
+                    }, 15000);
+                }
+            }
+
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
